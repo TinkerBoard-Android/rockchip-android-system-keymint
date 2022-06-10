@@ -16,33 +16,46 @@ package {
     default_applicable_licenses: ["system_keymint_license"],
 }
 
-rust_proc_macro {
-    name: "libkmr_derive",
-    crate_name: "kmr_derive",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
-    srcs: ["src/lib.rs"],
-    edition: "2021",
-    rustlibs: [
-        "libproc_macro2",
-        "libquote",
-        "libsyn",
-    ],
-}
-
-rust_test {
-    name: "libkmr_derive_test",
-    crate_name: "kmr_derive_test",
-    srcs: ["tests/integration_test.rs"],
-    test_suites: ["general-tests"],
+rust_defaults {
+    name: "kmr_common_defaults",
     edition: "2021",
     lints: "vendor",
     rustlibs: [
         "libciborium",
         "libciborium_io",
-        "libkmr_common",
+        "libcoset",
+        "liblog_rust",
     ],
     proc_macros: [
+        "libenumn",
         "libkmr_derive",
     ],
+}
+
+rust_library {
+    name: "libkmr_common",
+    crate_name: "kmr_common",
+    srcs: ["src/lib.rs"],
+    host_supported: true,
+    vendor_available: true,
+    defaults: [
+        "kmr_common_defaults",
+    ],
+}
+
+rust_test {
+    name: "libkmr_common_test",
+    crate_name: "kmr_common_test",
+    srcs: ["src/lib.rs"],
+    defaults: [
+        "kmr_common_defaults",
+    ],
+    test_suites: ["general-tests"],
+}
+
+rust_binary_host {
+    name: "kmr_cddl_dump",
+    crate_name: "kmr_cddl_dump",
+    srcs: ["src/bin/cddl-dump.rs"],
+    rustlibs: ["libkmr_common"],
 }
