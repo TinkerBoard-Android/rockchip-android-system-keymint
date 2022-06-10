@@ -111,7 +111,10 @@ pub trait Aes {
         Ok((PlaintextKeyMaterial::Aes(aes_key), key_size))
     }
 
-    /// Create an AES operation.
+    /// Create an AES operation.  For block mode operations with no padding
+    /// ([`aes::CipherMode::EcbNoPadding`] and [`aes::CipherMode::CbcNoPadding`]) the operation
+    /// implementation should reject (with [`ErrorCode::InvalidInputLength`]) input data that does
+    /// not end up being a multiple of the block size.
     fn begin(
         &self,
         key: aes::Key,
@@ -160,7 +163,10 @@ pub trait Des {
         Ok(PlaintextKeyMaterial::TripleDes(des_key))
     }
 
-    /// Create a DES operation.
+    /// Create a DES operation.  For block mode operations with no padding
+    /// ([`des::Mode::EcbNoPadding`] and [`des::Mode::CbcNoPadding`]) the operation implementation
+    /// should reject (with [`ErrorCode::InvalidInputLength`]) input data that does not end up being
+    /// a multiple of the block size.
     fn begin(
         &self,
         key: des::Key,
@@ -257,7 +263,10 @@ pub trait Rsa {
         mode: rsa::DecryptionMode,
     ) -> Result<Box<dyn RsaDecryptOperation>, Error>;
 
-    /// Create an RSA signing operation.
+    /// Create an RSA signing operation.  For [`rsa::SignMode::Pkcs1_1_5Padding(Digest::None)`] the
+    /// implementation should reject (with [`ErrorCode::InvalidInputLength`]) accumulated input
+    /// that is larger than the size of the RSA key less overhead
+    /// ([`rsa::PKCS1_UNDIGESTED_SIGNATURE_PADDING_OVERHEAD`]).
     fn begin_sign(
         &self,
         key: rsa::Key,
@@ -312,7 +321,9 @@ pub trait Ec {
     /// Create an EC key agreement operation.
     fn begin_agree(&self, key: ec::Key) -> Result<Box<dyn EcAgreeOperation>, Error>;
 
-    /// Create an EC signing operation.
+    /// Create an EC signing operation.  For Ed25519 signing operations, the implementation should
+    /// reject (with [`ErrorCode::InvalidInputLength`]) accumulated data that is larger than
+    /// [`ec::MAX_ED25519_MSG_SIZE`].
     fn begin_sign(&self, key: ec::Key, digest: Digest) -> Result<Box<dyn EcSignOperation>, Error>;
 }
 
