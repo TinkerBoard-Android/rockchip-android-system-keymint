@@ -19,6 +19,7 @@ pub use ciborium as cbor;
 pub use coset;
 
 pub mod crypto;
+pub mod keyblob;
 pub mod tag;
 pub mod wire;
 
@@ -120,6 +121,28 @@ impl<T> From<cbor::ser::Error<T>> for CborError {
 impl From<core::num::TryFromIntError> for CborError {
     fn from(_: core::num::TryFromIntError) -> Self {
         CborError::OutOfRangeIntegerValue
+    }
+}
+
+impl From<coset::CoseError> for CborError {
+    fn from(e: coset::CoseError) -> Self {
+        match e {
+            coset::CoseError::DecodeFailed(inner) => CborError::DecodeFailed(match inner {
+                cbor::de::Error::Io(_io) => cbor::de::Error::Io(EndOfFile),
+                cbor::de::Error::Syntax(v) => cbor::de::Error::Syntax(v),
+                cbor::de::Error::Semantic(sz, msg) => cbor::de::Error::Semantic(sz, msg),
+                cbor::de::Error::RecursionLimitExceeded => cbor::de::Error::RecursionLimitExceeded,
+            }),
+            coset::CoseError::EncodeFailed => CborError::EncodeFailed,
+            coset::CoseError::ExtraneousData => CborError::ExtraneousData,
+            coset::CoseError::OutOfRangeIntegerValue => CborError::OutOfRangeIntegerValue,
+            coset::CoseError::UnregisteredIanaValue => CborError::NonEnumValue,
+            coset::CoseError::UnregisteredIanaNonPrivateValue => CborError::NonEnumValue,
+            coset::CoseError::UnexpectedItem(got, want) => CborError::UnexpectedItem(got, want),
+            coset::CoseError::DuplicateMapKey => {
+                CborError::UnexpectedItem("dup map key", "unique keys")
+            }
+        }
     }
 }
 

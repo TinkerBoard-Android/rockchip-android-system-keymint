@@ -14,7 +14,7 @@ use core::convert::{TryFrom, TryInto};
 
 /// Retrieve a `u8` from the start of the given slice, if possible.
 pub(crate) fn consume_u8(data: &mut &[u8]) -> Result<u8, Error> {
-    match data.get(0) {
+    match data.first() {
         Some(b) => {
             *data = &(*data)[1..];
             Ok(*b)
@@ -77,7 +77,6 @@ pub(crate) fn consume_i64(data: &mut &[u8]) -> Result<i64, Error> {
 
 /// Retrieve a vector of bytes from the start of the given slice, if possible,
 /// with the length of the data is expected to appear as a host-ordered `u32` prefix.
-#[allow(dead_code)]
 pub(crate) fn consume_vec(data: &mut &[u8]) -> Result<Vec<u8>, Error> {
     let len = consume_u32(data)? as usize;
     if len > data.len() {
