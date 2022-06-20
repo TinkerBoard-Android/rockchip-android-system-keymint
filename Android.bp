@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["system_keymint_license"],
+}
+
 license {
     name: "system_keymint_license",
     visibility: [":__subpackages__"],
