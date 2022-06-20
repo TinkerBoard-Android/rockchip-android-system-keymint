@@ -1,0 +1,341 @@
+Algorithm = int
+BlockMode = int
+Digest = int
+EcCurve = int
+ErrorCode = int
+HardwareAuthenticatorType = int
+KeyFormat = int
+KeyOrigin = int
+KeyPurpose = int
+PaddingMode = int
+SecurityLevel = int
+Tag = int
+TagType = int
+AttestationKey = [
+    key_blob: bstr,
+    attest_key_params: [* KeyParameter],
+    issuer_subject_name: bstr,
+]
+Certificate = [
+    encoded_certificate: bstr,
+]
+DeviceInfo = [
+    device_info: bstr,
+]
+HardwareAuthToken = [
+    challenge: int,
+    user_id: int,
+    authenticator_id: int,
+    authenticator_type: HardwareAuthenticatorType,
+    timestamp: Timestamp,
+    mac: bstr,
+]
+KeyCharacteristics = [
+    security_level: SecurityLevel,
+    authorizations: [* KeyParameter],
+]
+KeyCreationResult = [
+    key_blob: bstr,
+    key_characteristics: [* KeyCharacteristics],
+    certificate_chain: [* Certificate],
+]
+KeyMintHardwareInfo = [
+    version_number: int,
+    security_level: SecurityLevel,
+    key_mint_name: tstr,
+    key_mint_author_name: tstr,
+    timestamp_token_required: bool,
+]
+MacedPublicKey = [
+    maced_key: bstr,
+]
+ProtectedData = [
+    protected_data: bstr,
+]
+RpcHardwareInfo = [
+    version_number: int,
+    rpc_author_name: tstr,
+    supported_eek_curve: RpcEekCurve,
+    unique_id: [? tstr],
+]
+TimeStampToken = [
+    challenge: int,
+    timestamp: Timestamp,
+    mac: bstr,
+]
+Timestamp = [
+    milliseconds: int,
+]
+SharedSecretParameters = [
+    seed: bstr,
+    nonce: bstr,
+]
+KeyParameter = [
+    tag: Tag,
+    ; Choice for value is determined by tag value
+    value: &(
+        Invalid: int,
+        Algorithm: Algorithm,
+        BlockMode: BlockMode,
+        PaddingMode: PaddingMode,
+        Digest: Digest,
+        EcCurve: EcCurve,
+        Origin: KeyOrigin,
+        KeyPurpose: KeyPurpose,
+        HardwareAuthenticatorType: HardwareAuthenticatorType,
+        SecurityLevel: SecurityLevel,
+        BoolValue: bool,
+        Integer: int,
+        LongInteger: int,
+        DateTime: int,
+        Blob: bstr,
+    )
+]
+KeyMintOperation = &(
+    DeviceGetHardwareInfo: 0x11,
+    DeviceAddRngEntropy: 0x12,
+    DeviceGenerateKey: 0x13,
+    DeviceImportKey: 0x14,
+    DeviceImportWrappedKey: 0x15,
+    DeviceUpgradeKey: 0x16,
+    DeviceDeleteKey: 0x17,
+    DeviceDeleteAllKeys: 0x18,
+    DeviceDestroyAttestationIds: 0x19,
+    DeviceBegin: 0x1a,
+    DeviceDeviceLocked: 0x1b,
+    DeviceEarlyBootEnded: 0x1c,
+    DeviceConvertStorageKeyToEphemeral: 0x1d,
+    DeviceGetKeyCharacteristics: 0x1e,
+    OperationUpdateAad: 0x31,
+    OperationUpdate: 0x32,
+    OperationFinish: 0x33,
+    OperationAbort: 0x34,
+    RpcGetHardwareInfo: 0x41,
+    RpcGenerateEcdsaP256KeyPair: 0x42,
+    RpcGenerateCertificateRequest: 0x43,
+    SharedSecretGetSharedSecretParameters: 0x51,
+    SharedSecretComputeSharedSecret: 0x52,
+    SecureClockGenerateTimeStamp: 0x61,
+    GetRootOfTrustChallenge: 0x71,
+    GetRootOfTrust: 0x72,
+    SendRootOfTrust: 0x73,
+    SetHalInfo: 0x81,
+    SetBootInfo: 0x82,
+)
+GetHardwareInfoRequest = []
+GetHardwareInfoResponse = [
+    ret: KeyMintHardwareInfo,
+]
+AddRngEntropyRequest = [
+    data: bstr,
+]
+AddRngEntropyResponse = []
+GenerateKeyRequest = [
+    key_params: [* KeyParameter],
+    attestation_key: [? AttestationKey],
+]
+GenerateKeyResponse = [
+    ret: KeyCreationResult,
+]
+ImportKeyRequest = [
+    key_params: [* KeyParameter],
+    key_format: KeyFormat,
+    key_data: bstr,
+    attestation_key: [? AttestationKey],
+]
+ImportKeyResponse = [
+    ret: KeyCreationResult,
+]
+ImportWrappedKeyRequest = [
+    wrapped_key_data: bstr,
+    wrapping_key_blob: bstr,
+    masking_key: bstr,
+    unwrapping_params: [* KeyParameter],
+    password_sid: int,
+    biometric_sid: int,
+]
+ImportWrappedKeyResponse = [
+    ret: KeyCreationResult,
+]
+UpgradeKeyRequest = [
+    key_blob_to_upgrade: bstr,
+    upgrade_params: [* KeyParameter],
+]
+UpgradeKeyResponse = [
+    ret: bstr,
+]
+DeleteKeyRequest = [
+    key_blob: bstr,
+]
+DeleteKeyResponse = []
+DeleteAllKeysRequest = []
+DeleteAllKeysResponse = []
+DestroyAttestationIdsRequest = []
+DestroyAttestationIdsResponse = []
+BeginRequest = [
+    purpose: KeyPurpose,
+    key_blob: bstr,
+    params: [* KeyParameter],
+    auth_token: [? HardwareAuthToken],
+]
+InternalBeginResult = [
+    challenge: int,
+    params: [* KeyParameter],
+    op_handle: int,
+]
+DeviceLockedRequest = [
+    password_only: bool,
+    timestamp_token: [? TimeStampToken],
+]
+DeviceLockedResponse = []
+EarlyBootEndedRequest = []
+EarlyBootEndedResponse = []
+ConvertStorageKeyToEphemeralRequest = [
+    storage_key_blob: bstr,
+]
+ConvertStorageKeyToEphemeralResponse = [
+    ret: bstr,
+]
+GetKeyCharacteristicsRequest = [
+    key_blob: bstr,
+    app_id: bstr,
+    app_data: bstr,
+]
+GetKeyCharacteristicsResponse = [
+    ret: [* KeyCharacteristics],
+]
+UpdateAadRequest = [
+    op_handle: int,
+    input: bstr,
+    auth_token: [? HardwareAuthToken],
+    timestamp_token: [? TimeStampToken],
+]
+UpdateAadResponse = []
+UpdateRequest = [
+    op_handle: int,
+    input: bstr,
+    auth_token: [? HardwareAuthToken],
+    timestamp_token: [? TimeStampToken],
+]
+UpdateResponse = [
+    ret: bstr,
+]
+FinishRequest = [
+    op_handle: int,
+    input: [? bstr],
+    signature: [? bstr],
+    auth_token: [? HardwareAuthToken],
+    timestamp_token: [? TimeStampToken],
+    confirmation_token: [? bstr],
+]
+FinishResponse = [
+    ret: bstr,
+]
+AbortRequest = [
+    op_handle: int,
+]
+AbortResponse = []
+GetRpcHardwareInfoRequest = []
+GetRpcHardwareInfoResponse = [
+    ret: RpcHardwareInfo,
+]
+GenerateEcdsaP256KeyPairRequest = [
+    test_mode: bool,
+]
+GenerateEcdsaP256KeyPairResponse = [
+    maced_public_key: MacedPublicKey,
+    ret: bstr,
+]
+GenerateCertificateRequestRequest = [
+    test_mode: bool,
+    keys_to_sign: [* MacedPublicKey],
+    endpoint_encryption_cert_chain: bstr,
+    challenge: bstr,
+]
+GenerateCertificateRequestResponse = [
+    device_info: DeviceInfo,
+    protected_data: ProtectedData,
+    ret: bstr,
+]
+GetSharedSecretParametersRequest = []
+GetSharedSecretParametersResponse = [
+    ret: SharedSecretParameters,
+]
+ComputeSharedSecretRequest = [
+    params: [* SharedSecretParameters],
+]
+ComputeSharedSecretResponse = [
+    ret: bstr,
+]
+GenerateTimeStampRequest = [
+    challenge: int,
+]
+GenerateTimeStampResponse = [
+    ret: TimeStampToken,
+]
+PerformOpReq = &(
+    [DeviceGetHardwareInfo, GetHardwareInfoRequest],
+    [DeviceAddRngEntropy, AddRngEntropyRequest],
+    [DeviceGenerateKey, GenerateKeyRequest],
+    [DeviceImportKey, ImportKeyRequest],
+    [DeviceImportWrappedKey, ImportWrappedKeyRequest],
+    [DeviceUpgradeKey, UpgradeKeyRequest],
+    [DeviceDeleteKey, DeleteKeyRequest],
+    [DeviceDeleteAllKeys, DeleteAllKeysRequest],
+    [DeviceDestroyAttestationIds, DestroyAttestationIdsRequest],
+    [DeviceBegin, BeginRequest],
+    [DeviceDeviceLocked, DeviceLockedRequest],
+    [DeviceEarlyBootEnded, EarlyBootEndedRequest],
+    [DeviceConvertStorageKeyToEphemeral, ConvertStorageKeyToEphemeralRequest],
+    [DeviceGetKeyCharacteristics, GetKeyCharacteristicsRequest],
+    [OperationUpdateAad, UpdateAadRequest],
+    [OperationUpdate, UpdateRequest],
+    [OperationFinish, FinishRequest],
+    [OperationAbort, AbortRequest],
+    [RpcGetHardwareInfo, GetRpcHardwareInfoRequest],
+    [RpcGenerateEcdsaP256KeyPair, GenerateEcdsaP256KeyPairRequest],
+    [RpcGenerateCertificateRequest, GenerateCertificateRequestRequest],
+    [SharedSecretGetSharedSecretParameters, GetSharedSecretParametersRequest],
+    [SharedSecretComputeSharedSecret, ComputeSharedSecretRequest],
+    [SecureClockGenerateTimeStamp, GenerateTimeStampRequest],
+    [GetRootOfTrustChallenge, GetRootOfTrustChallengeRequest],
+    [GetRootOfTrust, GetRootOfTrustRequest],
+    [SendRootOfTrust, SendRootOfTrustRequest],
+    [SetHalInfo, SetHalInfoRequest],
+    [SetBootInfo, SetBootInfoRequest],
+)
+PerformOpRsp = &(
+    [DeviceGetHardwareInfo, GetHardwareInfoResponse],
+    [DeviceAddRngEntropy, AddRngEntropyResponse],
+    [DeviceGenerateKey, GenerateKeyResponse],
+    [DeviceImportKey, ImportKeyResponse],
+    [DeviceImportWrappedKey, ImportWrappedKeyResponse],
+    [DeviceUpgradeKey, UpgradeKeyResponse],
+    [DeviceDeleteKey, DeleteKeyResponse],
+    [DeviceDeleteAllKeys, DeleteAllKeysResponse],
+    [DeviceDestroyAttestationIds, DestroyAttestationIdsResponse],
+    [DeviceBegin, BeginResponse],
+    [DeviceDeviceLocked, DeviceLockedResponse],
+    [DeviceEarlyBootEnded, EarlyBootEndedResponse],
+    [DeviceConvertStorageKeyToEphemeral, ConvertStorageKeyToEphemeralResponse],
+    [DeviceGetKeyCharacteristics, GetKeyCharacteristicsResponse],
+    [OperationUpdateAad, UpdateAadResponse],
+    [OperationUpdate, UpdateResponse],
+    [OperationFinish, FinishResponse],
+    [OperationAbort, AbortResponse],
+    [RpcGetHardwareInfo, GetRpcHardwareInfoResponse],
+    [RpcGenerateEcdsaP256KeyPair, GenerateEcdsaP256KeyPairResponse],
+    [RpcGenerateCertificateRequest, GenerateCertificateRequestResponse],
+    [SharedSecretGetSharedSecretParameters, GetSharedSecretParametersResponse],
+    [SharedSecretComputeSharedSecret, ComputeSharedSecretResponse],
+    [SecureClockGenerateTimeStamp, GenerateTimeStampResponse],
+    [GetRootOfTrustChallenge, GetRootOfTrustChallengeResponse],
+    [GetRootOfTrust, GetRootOfTrustResponse],
+    [SendRootOfTrust, SendRootOfTrustResponse],
+    [SetHalInfo, SetHalInfoResponse],
+    [SetBootInfo, SetBootInfoResponse],
+)
+PerformOpResponse = [
+    error_code: ErrorCode,
+    rsp: [? PerformOpRsp],
+]
