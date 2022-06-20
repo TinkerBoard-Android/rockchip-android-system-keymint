@@ -1,0 +1,9 @@
+[workspace]
+members = [
+  "common",
+  "derive",
+]
+
+[patch.crates-io]
+kmr-derive = { path = "derive" }
+kmr-common = { path = "common" }
