@@ -19,6 +19,7 @@ pub use ciborium as cbor;
 pub use coset;
 
 pub mod crypto;
+pub mod tag;
 pub mod wire;
 
 /// General error type.
