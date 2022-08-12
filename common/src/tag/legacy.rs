@@ -14,7 +14,7 @@ use core::convert::{TryFrom, TryInto};
 
 /// Retrieve a `u8` from the start of the given slice, if possible.
 pub(crate) fn consume_u8(data: &mut &[u8]) -> Result<u8, Error> {
-    match data.get(0) {
+    match data.first() {
         Some(b) => {
             *data = &(*data)[1..];
             Ok(*b)
