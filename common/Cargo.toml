@@ -5,6 +5,7 @@ authors = ["David Drysdale <drysdale@google.com>"]
 edition = "2021"
 
 [dependencies]
+cddl-cat = { version = "^0.6.1", optional = true }
 ciborium = { version = "^0.2.0", default-features = false }
 ciborium-io = "^0.2.0"
 coset = "0.3.2"
