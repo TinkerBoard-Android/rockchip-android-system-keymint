@@ -339,7 +339,7 @@ pub struct PerformOpResponse {
 /// Declare a collection of related enums for an code and a pair of types.
 ///
 /// An invocation like:
-/// ```
+/// ```ignore
 /// declare_req_rsp_enums! { KeyMintOperation  => (PerformOpReq, PerformOpRsp) {
 ///     DeviceGetHardwareInfo = 0x11 => (GetHardwareInfoRequest, GetHardwareInfoResponse),
 ///     DeviceAddRngEntropy = 0x12 =>   (AddRngEntropyRequest, AddRngEntropyResponse),
@@ -349,7 +349,7 @@ pub struct PerformOpResponse {
 /// column), but whose contents are:
 ///
 /// - the numeric values (second column)
-///   ```
+///   ```ignore
 ///   #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 ///   enum KeyMintOperation {
 ///       DeviceGetHardwareInfo = 0x11,
@@ -358,7 +358,7 @@ pub struct PerformOpResponse {
 ///   ```
 ///
 /// - the types from the third column:
-///   ```
+///   ```ignore
 ///   #[derive(Debug)]
 ///   enum PerformOpReq {
 ///       DeviceGetHardwareInfo(GetHardwareInfoRequest),
@@ -367,7 +367,7 @@ pub struct PerformOpResponse {
 ///   ```
 ///
 /// - the types from the fourth column:
-///   ```
+///   ```ignore
 ///   #[derive(Debug)]
 ///   enum PerformOpRsp {
 ///       DeviceGetHardwareInfo(GetHardwareInfoResponse),

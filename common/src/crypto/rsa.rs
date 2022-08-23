@@ -1,12 +1,11 @@
 //! Functionality related to RSA.
 
 use crate::{
-    cbor_type_error, km_err, tag,
+    km_err, tag,
     wire::keymint::{Digest, KeyParam, PaddingMode},
     AsCborValue, CborError, Error,
 };
 use alloc::{
-    format,
     string::{String, ToString},
     vec,
     vec::Vec,
