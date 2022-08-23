@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned};
 use syn::{
     parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, GenericParam,
-    Generics, Index,
+    Generics, Ident, Index,
 };
 
 /// Derive macro that implements the `AsCborValue` trait.  Using this macro requires
@@ -23,7 +23,7 @@ fn derive_as_cbor_value_internal(input: &DeriveInput) -> proc_macro::TokenStream
 
     let from_val = from_val_struct(&input.data);
     let to_val = to_val_struct(&input.data);
-    let cddl = cddl_struct(&input.data);
+    let cddl = cddl_struct(name, &input.data);
 
     let expanded = quote! {
         // The generated impl
@@ -38,7 +38,7 @@ fn derive_as_cbor_value_internal(input: &DeriveInput) -> proc_macro::TokenStream
                 Some(stringify!(#name).to_string())
             }
             fn cddl_schema() -> Option<String> {
-                Some(#cddl)
+                #cddl
             }
         }
     };
@@ -80,6 +80,14 @@ fn to_val_struct(data: &Data) -> TokenStream {
                     });
                     quote! {
                         Ok(ciborium::value::Value::Array(vec![ #(#recurse, )* ]))
+                    }
+                }
+                Fields::Unnamed(ref fields) if fields.unnamed.len() == 1 => {
+                    // For a newtype, expands to an expression
+                    //
+                    //     self.0.to_cbor_value()
+                    quote! {
+                        self.0.to_cbor_value()
                     }
                 }
                 Fields::Unnamed(ref fields) => {
@@ -152,12 +160,25 @@ fn from_val_struct(data: &Data) -> TokenStream {
                             _ => return cbor_type_error(&value, "arr"),
                         };
                         if a.len() != #nfields {
-                            return Err(CborError::UnexpectedItem("arr", concat!("arr len ", stringify!(#nfields))));
+                            return Err(CborError::UnexpectedItem(
+                                "arr",
+                                concat!("arr len ", stringify!(#nfields)),
+                            ));
                         }
                         // Fields specified in reverse order to reduce shifting.
                         Ok(Self {
                             #(#recurse, )*
                         })
+                    }
+                }
+                Fields::Unnamed(ref fields) if fields.unnamed.len() == 1 => {
+                    // For a newtype, expands to an expression like
+                    //
+                    //     Ok(Self(<InnerType>::from_cbor_value(value)?))
+                    let inner = fields.unnamed.first().unwrap();
+                    let typ = &inner.ty;
+                    quote! {
+                        Ok(Self(<#typ>::from_cbor_value(value)?))
                     }
                 }
                 Fields::Unnamed(ref fields) => {
@@ -253,14 +274,14 @@ fn from_val_struct(data: &Data) -> TokenStream {
 }
 
 /// Generate an expression that expresses the CDDL schema for the type.
-fn cddl_struct(data: &Data) -> TokenStream {
+fn cddl_struct(name: &Ident, data: &Data) -> TokenStream {
     match *data {
         Data::Struct(ref data) => {
             match data.fields {
                 Fields::Named(ref fields) => {
                     if fields.named.iter().next().is_none() {
                         return quote! {
-                            format!("[]")
+                            Some(format!("[]"))
                         };
                     }
                     // Expands to an expression like
@@ -292,16 +313,23 @@ fn cddl_struct(data: &Data) -> TokenStream {
                         }
                     });
                     quote! {
-                        format!(
+                        Some(format!(
                             #fmt,
                             #(#recurse, )*
-                        )
+                        ))
+                    }
+                }
+                Fields::Unnamed(ref fields) if fields.unnamed.len() == 1 => {
+                    let inner = fields.unnamed.first().unwrap();
+                    let typ = &inner.ty;
+                    quote! {
+                        Some(<#typ>::cddl_ref())
                     }
                 }
                 Fields::Unnamed(ref fields) => {
                     if fields.unnamed.iter().next().is_none() {
                         return quote! {
-                            format!("()")
+                            Some(format!("()"))
                         };
                     }
                     // Expands to an expression like
@@ -333,18 +361,55 @@ fn cddl_struct(data: &Data) -> TokenStream {
                         }
                     });
                     quote! {
-                        format!(
+                        Some(format!(
                             #fmt,
                             #(#recurse, )*
-                        )
+                        ))
                     }
                 }
                 Fields::Unit => unimplemented!(),
             }
         }
-        Data::Enum(_) => {
+        Data::Enum(ref enum_data) => {
+            // This only copes with variants with no fields.
+            // Expands to an expression like:
+            //
+            //     format!("&(
+            //         EnumName_Variant1: {},
+            //         EnumName_Variant2: {},
+            //         EnumName_Variant3: {},
+            //     )",
+            //         Self::Variant1 as i32,
+            //         Self::Variant2 as i32,
+            //         Self::Variant3 as i32,
+            //     )
+            //
+            let fmt_recurse = enum_data.variants.iter().map(|variant| {
+                let vname = &variant.ident;
+                quote_spanned! {variant.span()=>
+                                concat!("    ",
+                                        stringify!(#name),
+                                        "_",
+                                        stringify!(#vname),
+                                        ": {},\n")
+                }
+            });
+            let fmt = quote! {
+                concat!("&(\n",
+                         #(#fmt_recurse, )*
+                         ")")
+            };
+            let recurse = enum_data.variants.iter().map(|variant| {
+                let vname = &variant.ident;
+                quote_spanned! {variant.span()=>
+                                Self::#vname as i32
+                }
+            });
             quote! {
-                "int".to_string()
+                Some(format!(
+                    #fmt,
+                    #(#recurse, )*
+                ))
             }
         }
         Data::Union(_) => unimplemented!(),
