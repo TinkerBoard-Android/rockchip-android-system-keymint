@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::wire::keymint::{Digest, EcCurve};
-use crate::Error;
+use crate::{keyblob, Error};
 use alloc::{boxed::Box, vec, vec::Vec};
 use log::{error, warn};
 
@@ -10,6 +10,9 @@ use log::{error, warn};
 pub struct Implementation<'a> {
     /// Random number generator.
     pub rng: &'a mut dyn Rng,
+
+    /// Secure deletion secret manager.
+    pub sdd_mgr: Option<&'a mut dyn keyblob::SecureDeletionSecretManager>,
 
     /// A local clock, if available. If not available, KeyMint will require
     /// timestamp tokens to be provided by an external ISecureClock (which
@@ -512,5 +515,29 @@ impl Ec for NoOpEc {
         _digest: Digest,
     ) -> Result<Box<dyn EcSignOperation>, Error> {
         unimpl!();
+    }
+}
+
+pub struct NoOpSdsManager;
+impl keyblob::SecureDeletionSecretManager for NoOpSdsManager {
+    fn new_secret(
+        &mut self,
+        _rng: &mut dyn Rng,
+    ) -> Result<(keyblob::SecureDeletionSlot, keyblob::SecureDeletionData), Error> {
+        unimpl!();
+    }
+
+    fn get_secret(
+        &self,
+        _slot: keyblob::SecureDeletionSlot,
+    ) -> Result<keyblob::SecureDeletionData, Error> {
+        unimpl!();
+    }
+    fn delete_secret(&mut self, _slot: keyblob::SecureDeletionSlot) -> Result<(), Error> {
+        unimpl!();
+    }
+
+    fn delete_all(&mut self) {
+        log_unimpl!();
     }
 }

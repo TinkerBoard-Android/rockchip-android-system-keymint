@@ -2,7 +2,7 @@
 //! and related functionality.
 
 use crate::{
-    cbor, cbor_type_error, km_err,
+    cbor, km_err,
     wire::keymint::{Algorithm, Digest, EcCurve},
     AsCborValue, CborError, Error,
 };
