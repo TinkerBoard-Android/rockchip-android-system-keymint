@@ -12,6 +12,10 @@ use alloc::{
 };
 use kmr_derive::AsCborValue;
 
+/// Overhead for PKCS#1 v1.5 signature padding of undigested messages.  Digested messages have
+/// additional overhead, for the digest algorithmIdentifier required by PKCS#1.
+pub const PKCS1_UNDIGESTED_SIGNATURE_PADDING_OVERHEAD: usize = 11;
+
 /// RSA exponent.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue)]
