@@ -35,8 +35,31 @@ pub const UNPOLICED_COPYABLE_TAGS: &[Tag] = &[
     Tag::StorageKey,
 ];
 
+/// Indication of whether secure storage is available.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SecureStorage {
+    Available,
+    Unavailable,
+}
+
 // TODO: add a macro variant that returns a reference to the data in a tag whose contents are
 // a blob of data, to avoid the need for allocation.
+
+/// Macro to retrieve all of the values of a tag in a collection of `KeyParam`s.
+#[macro_export]
+macro_rules! get_tag_values {
+    { $params:expr, $variant:ident } => {
+        {
+            let mut result = alloc::vec::Vec::new();
+            for param in $params {
+                if let $crate::wire::keymint::KeyParam::$variant(v) = param {
+                    result.push(v.clone());
+                }
+            }
+            result
+        }
+    }
+}
 
 /// Macro to retrieve the (single) value of a tag in a collection of `KeyParam`s.
 /// There can be only one.
@@ -225,6 +248,7 @@ pub fn hidden(params: &[KeyParam], rot: &[u8]) -> Vec<KeyParam> {
 /// checking parameter validity along the way. Also return the information needed for key
 /// generation.
 pub fn extract_key_gen_characteristics(
+    secure_storage: SecureStorage,
     params: &[KeyParam],
     sec_level: SecurityLevel,
 ) -> Result<(Vec<KeyCharacteristics>, KeyGenInfo), Error> {
@@ -235,13 +259,14 @@ pub fn extract_key_gen_characteristics(
         Algorithm::TripleDes => extract_3des_gen_characteristics(params),
         Algorithm::Hmac => extract_hmac_gen_characteristics(params),
     }?;
-    Ok((extract_key_characteristics(params, sec_level, chars)?, keygen_info))
+    Ok((extract_key_characteristics(secure_storage, params, sec_level, chars)?, keygen_info))
 }
 
 /// Build the set of key characteristics for a key that is about to be imported,
 /// checking parameter validity along the way.
 pub fn extract_key_import_characteristics(
     imp: &crypto::Implementation,
+    secure_storage: SecureStorage,
     params: &[KeyParam],
     sec_level: SecurityLevel,
     key_format: KeyFormat,
@@ -264,12 +289,13 @@ pub fn extract_key_import_characteristics(
             extract_hmac_import_characteristics(imp.hmac, params, key_format, key_data)
         }
     }?;
-    Ok((extract_key_characteristics(params, sec_level, chars)?, key_material))
+    Ok((extract_key_characteristics(secure_storage, params, sec_level, chars)?, key_material))
 }
 
 /// Build the set of key characteristics for a key that is about to be generated or imported,
 /// checking parameter validity along the way.
 fn extract_key_characteristics(
+    secure_storage: SecureStorage,
     params: &[KeyParam],
     sec_level: SecurityLevel,
     mut chars: Vec<KeyParam>,
@@ -290,6 +316,18 @@ fn extract_key_characteristics(
     // Separately accumulate any characteristics that are policed by Keystore.
     let mut keystore_chars = vec![];
     transcribe_tags(&mut keystore_chars, params, KEYSTORE_ENFORCED_TAGS)?;
+
+    // UsageCountLimit is peculiar. If its value is > 1, it should be Keystore-enforced.
+    // If its value is = 1, then it is KeyMint-enforced if secure storage is available,
+    // and Keystore-enforced otherwise.
+    if let Some(use_limit) = get_opt_tag_value!(params, UsageCountLimit)? {
+        match (use_limit, secure_storage) {
+            (1, SecureStorage::Available) => chars.push(KeyParam::UsageCountLimit(*use_limit)),
+            (1, SecureStorage::Unavailable) | (_, _) => {
+                keystore_chars.push(KeyParam::UsageCountLimit(*use_limit))
+            }
+        }
+    }
 
     // Use the same sort order for tags as was previously used.
     chars.sort_by(legacy::param_compare);
@@ -438,7 +476,7 @@ fn extract_rsa_characteristics(
                 }
                 Digest::None => {
                     return Err(km_err!(
-                        UnsupportedMgfDigest,
+                        IncompatibleMgfDigest,
                         "OAEP MGF digest {:?} not allowed",
                         digest
                     ))
@@ -501,10 +539,43 @@ fn extract_ec_import_characteristics(
     // For key import, the curve must be explicitly specified.
     let curve = get_ec_curve(params)?;
 
+    // To disinguish between Ed25519 and X25519, need to examine the purpose for the key.
+    // Look for AgreeKey as it cannot be combined with other purposes.
+    let primary_purpose = params
+        .iter()
+        .filter_map(
+            |param| if let KeyParam::Purpose(purpose) = param { Some(purpose) } else { None },
+        )
+        .next()
+        .ok_or_else(|| km_err!(IncompatiblePurpose, "no purpose found on EC import"))?;
+
     // Curve25519 can be imported as PKCS8 or raw; all other curves must be PKCS8.
     let key = match (curve, key_format) {
-        (EcCurve::Curve25519, KeyFormat::Raw) => ec.import_raw_curve25519_key(key_data)?,
-        (curve, KeyFormat::Pkcs8) => ec.import_pkcs8_key(curve, key_data)?,
+        (EcCurve::Curve25519, KeyFormat::Raw) => {
+            if *primary_purpose == KeyPurpose::AgreeKey {
+                ec.import_raw_x25519_key(key_data)?
+            } else {
+                ec.import_raw_ed25519_key(key_data)?
+            }
+        }
+        (curve, KeyFormat::Pkcs8) => {
+            let key = ec.import_pkcs8_key(curve, key_data)?;
+            match (&key, primary_purpose) {
+                (PlaintextKeyMaterial::Ec(_, ec::Key::Ed25519(_)), KeyPurpose::AgreeKey) => {
+                    return Err(km_err!(
+                        IncompatiblePurpose,
+                        "can't use Ed25519 key for key agreement"
+                    ));
+                }
+                (PlaintextKeyMaterial::Ec(_, ec::Key::X25519(_)), purpose)
+                    if *purpose != KeyPurpose::AgreeKey =>
+                {
+                    return Err(km_err!(IncompatiblePurpose, "can't use X25519 key for signing"));
+                }
+                _ => {}
+            }
+            key
+        }
         (curve, key_format) => {
             return Err(km_err!(
                 UnsupportedKeyFormat,
