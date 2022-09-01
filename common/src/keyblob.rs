@@ -40,6 +40,14 @@ pub enum EncryptedKeyBlob {
     // Future versions go here...
 }
 
+impl EncryptedKeyBlob {
+    /// Construct from serialized data, mapping failure to `ErrorCode::InvalidKeyBlob`.
+    pub fn new(data: &[u8]) -> Result<Self, Error> {
+        Self::from_slice(data)
+            .map_err(|e| km_err!(InvalidKeyBlob, "failed to parse keyblob: {:?}", e))
+    }
+}
+
 impl AsCborValue for EncryptedKeyBlob {
     fn from_cbor_value(value: cbor::value::Value) -> Result<Self, CborError> {
         let mut a = match value {
@@ -197,8 +205,8 @@ pub struct RootOfTrustInfo {
 ///    - CBOR-serialized array of additional `KeyParam` items in `hidden`
 ///    - (if `sdd` provided) CBOR serialization of the `SecureDeletionData`
 pub fn derive_kek(
-    hmac: &dyn crypto::Hmac,
-    root_key: &[u8],
+    kdf: &dyn crypto::Hkdf,
+    root_key: &crypto::RawKeyMaterial,
     key_derivation_input: &[u8; 32],
     characteristics: Vec<KeyCharacteristics>,
     hidden: Vec<KeyParam>,
@@ -210,8 +218,8 @@ pub fn derive_kek(
     if let Some(sdd) = sdd {
         info.extend_from_slice(&sdd.into_vec()?);
     }
-    let data = crypto::hkdf::<32>(hmac, &[], root_key, &info)?;
-    Ok(crypto::aes::Key::Aes256(data))
+    let data = kdf.hkdf(&[], &root_key.0, &info, 32)?;
+    Ok(crypto::aes::Key::Aes256(data.try_into().unwrap(/* safe: len checked */)))
 }
 
 /// Plaintext key blob.
@@ -256,19 +264,22 @@ impl PlaintextKeyBlob {
 
 /// Consume a plaintext keyblob and emit an encrypted version.  If `sdd_mgr` is provided,
 /// a secure deletion slot will be embedded into the keyblob.
+#[allow(clippy::too_many_arguments)]
 pub fn encrypt(
+    sec_level: SecurityLevel,
     sdd_mgr: Option<&mut dyn SecureDeletionSecretManager>,
     aes: &dyn crypto::Aes,
-    hmac: &dyn crypto::Hmac,
+    kdf: &dyn crypto::Hkdf,
     rng: &mut dyn crypto::Rng,
-    root_key: &[u8],
+    root_key: &crypto::RawKeyMaterial,
     plaintext_keyblob: PlaintextKeyBlob,
     hidden: Vec<KeyParam>,
 ) -> Result<EncryptedKeyBlob, Error> {
-    // Determine if secure deletion is required.
-    let requires_sdd = (&plaintext_keyblob.characteristics)
+    // Determine if secure deletion is required by examining the key characteristics at our
+    // security level.
+    let requires_sdd = plaintext_keyblob
+        .characteristics_at(sec_level)?
         .iter()
-        .flat_map(|chars| chars.authorizations.iter())
         .any(|param| matches!(param, KeyParam::RollbackResistance | KeyParam::UsageCountLimit(1)));
     let (slot_holder, sdd) = match (requires_sdd, sdd_mgr) {
         (true, Some(sdd_mgr)) => {
@@ -289,7 +300,7 @@ pub fn encrypt(
     let mut key_derivation_input = [0u8; 32];
     rng.fill_bytes(&mut key_derivation_input[..]);
     let kek =
-        derive_kek(hmac, root_key, &key_derivation_input, characteristics.clone(), hidden, sdd)?;
+        derive_kek(kdf, root_key, &key_derivation_input, characteristics.clone(), hidden, sdd)?;
 
     // Encrypt the plaintext key material into a `Cose_Encrypt0` structure.
     let cose_encrypt = coset::CoseEncrypt0Builder::new()
@@ -323,8 +334,8 @@ pub fn encrypt(
 pub fn decrypt(
     sdd_mgr: Option<&dyn SecureDeletionSecretManager>,
     aes: &dyn crypto::Aes,
-    hmac: &dyn crypto::Hmac,
-    root_key: &[u8],
+    kdf: &dyn crypto::Hkdf,
+    root_key: &crypto::RawKeyMaterial,
     encrypted_keyblob: EncryptedKeyBlob,
     hidden: Vec<KeyParam>,
 ) -> Result<PlaintextKeyBlob, Error> {
@@ -341,7 +352,7 @@ pub fn decrypt(
     };
     let characteristics = encrypted_keyblob.characteristics;
     let kek = derive_kek(
-        hmac,
+        kdf,
         root_key,
         &encrypted_keyblob.key_derivation_input,
         characteristics.clone(),
@@ -363,7 +374,9 @@ pub fn decrypt(
     )?;
     op.update_aad(&extended_aad)?;
     let mut pt_data = op.update(&cose_encrypt.ciphertext.unwrap_or_default())?;
-    pt_data.extend_from_slice(&op.finish()?);
+    pt_data.extend_from_slice(
+        &op.finish().map_err(|e| km_err!(InvalidKeyBlob, "failed to decrypt keyblob: {:?}", e))?,
+    );
 
     Ok(PlaintextKeyBlob {
         characteristics,

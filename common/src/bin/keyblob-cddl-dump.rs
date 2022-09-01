@@ -108,6 +108,7 @@ fn main() {
     schema.add(keymint::BlockMode::Ecb);
     schema.add(keymint::Digest::None);
     schema.add(keymint::EcCurve::Curve25519);
+    schema.add(crypto::CurveType::Nist);
     schema.add(keymint::KeyOrigin::Generated);
     schema.add(keymint::KeyPurpose::Sign);
     schema.add(keymint::HardwareAuthenticatorType::Fingerprint);

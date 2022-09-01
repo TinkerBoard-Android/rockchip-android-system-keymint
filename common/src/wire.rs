@@ -206,7 +206,7 @@ pub struct SendRootOfTrustResponse {}
 // IKeyMintOperation methods.  These ...Request structures include an extra `op_handle` field whose
 // value was returned in the `InternalBeginResult` type and which identifies the operation in
 // progress.
-#[derive(Debug, AsCborValue)]
+#[derive(Debug, Clone, AsCborValue)]
 pub struct UpdateAadRequest {
     pub op_handle: i64, // Extra for internal use, from `InternalBeginResult`.
     pub input: Vec<u8>,
@@ -215,7 +215,7 @@ pub struct UpdateAadRequest {
 }
 #[derive(Debug, AsCborValue)]
 pub struct UpdateAadResponse {}
-#[derive(Debug, AsCborValue)]
+#[derive(Debug, Clone, AsCborValue)]
 pub struct UpdateRequest {
     pub op_handle: i64, // Extra for internal use, from `InternalBeginResult`.
     pub input: Vec<u8>,
@@ -327,6 +327,28 @@ pub struct SetBootInfoRequest {
 }
 #[derive(Debug, AsCborValue)]
 pub struct SetBootInfoResponse {}
+
+/// Attestation ID information.
+#[derive(Clone, Debug, AsCborValue)]
+pub struct AttestationIdInfo {
+    // The following fields are byte vectors that typically hold UTF-8 string data.
+    pub brand: Vec<u8>,
+    pub device: Vec<u8>,
+    pub product: Vec<u8>,
+    pub serial: Vec<u8>,
+    pub imei: Vec<u8>,
+    pub meid: Vec<u8>,
+    pub manufacturer: Vec<u8>,
+    pub model: Vec<u8>,
+}
+
+// Provisioner->TA at device provisioning time.
+#[derive(Debug, AsCborValue)]
+pub struct SetAttestationIdsRequest {
+    pub ids: AttestationIdInfo,
+}
+#[derive(Debug, AsCborValue)]
+pub struct SetAttestationIdsResponse {}
 
 // Result of an operation, as an error code and a response message (only present for
 // `ErrorCode::OK`).
@@ -567,4 +589,5 @@ declare_req_rsp_enums! { KeyMintOperation  =>    (PerformOpReq, PerformOpRsp) {
     SendRootOfTrust = 0x73 =>                          (SendRootOfTrustRequest, SendRootOfTrustResponse),
     SetHalInfo = 0x81 =>                               (SetHalInfoRequest, SetHalInfoResponse),
     SetBootInfo = 0x82 =>                              (SetBootInfoRequest, SetBootInfoResponse),
+    SetAttestationIds = 0x83 =>                        (SetAttestationIdsRequest, SetAttestationIdsResponse),
 } }
