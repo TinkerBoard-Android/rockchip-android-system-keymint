@@ -2,7 +2,7 @@
 //! and related functionality.
 
 use crate::{
-    cbor, km_err,
+    cbor, cbor_type_error, km_err,
     wire::keymint::{Algorithm, Digest, EcCurve},
     AsCborValue, CborError, Error,
 };
@@ -13,7 +13,9 @@ use alloc::{
     vec::Vec,
 };
 use core::convert::{From, TryInto};
+use enumn::N;
 use kmr_derive::AsCborValue;
+use log::error;
 
 pub mod aes;
 pub mod des;
@@ -53,6 +55,18 @@ pub enum KeyGenInfo {
     Ed25519,
     X25519,
 }
+
+/// Type of elliptic curve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
+#[repr(i32)]
+pub enum CurveType {
+    Nist = 0,
+    EdDsa = 1,
+    Xdh = 2,
+}
+
+/// Raw key material used for deriving other keys.
+pub struct RawKeyMaterial(pub Vec<u8>);
 
 /// Plaintext key material.
 #[derive(Clone, PartialEq, Eq)]
@@ -156,18 +170,36 @@ impl AsCborValue for PlaintextKeyMaterial {
             }
             x if x == Algorithm::Ec as i32 => {
                 let mut a = match raw_key_value {
-                    cbor::value::Value::Array(a) if a.len() == 2 => a,
+                    cbor::value::Value::Array(a) if a.len() == 3 => a,
                     _ => return crate::cbor_type_error(&raw_key_value, "arr len 2"),
                 };
-                let raw_key_value = a.remove(1);
+                let raw_key_value = a.remove(2);
                 let raw_key = <Vec<u8>>::from_cbor_value(raw_key_value)?;
+                let curve_type = CurveType::from_cbor_value(a.remove(1))?;
                 let curve = <EcCurve>::from_cbor_value(a.remove(0))?;
-                let key = match curve {
-                    EcCurve::P224 => ec::Key::P224(ec::NistKey(raw_key)),
-                    EcCurve::P256 => ec::Key::P256(ec::NistKey(raw_key)),
-                    EcCurve::P384 => ec::Key::P384(ec::NistKey(raw_key)),
-                    EcCurve::P521 => ec::Key::P521(ec::NistKey(raw_key)),
-                    EcCurve::Curve25519 => ec::Key::Curve25519(ec::Curve25519Key(raw_key)),
+                let key = match (curve, curve_type) {
+                    (EcCurve::P224, CurveType::Nist) => ec::Key::P224(ec::NistKey(raw_key)),
+                    (EcCurve::P256, CurveType::Nist) => ec::Key::P256(ec::NistKey(raw_key)),
+                    (EcCurve::P384, CurveType::Nist) => ec::Key::P384(ec::NistKey(raw_key)),
+                    (EcCurve::P521, CurveType::Nist) => ec::Key::P521(ec::NistKey(raw_key)),
+                    (EcCurve::Curve25519, CurveType::EdDsa) => {
+                        let key = raw_key.try_into().map_err(|_e| {
+                            error!("decoding Ed25519 key of incorrect len");
+                            CborError::OutOfRangeIntegerValue
+                        })?;
+                        ec::Key::Ed25519(ec::Ed25519Key(key))
+                    }
+                    (EcCurve::Curve25519, CurveType::Xdh) => {
+                        let key = raw_key.try_into().map_err(|_e| {
+                            error!("decoding X25519 key of incorrect len");
+                            CborError::OutOfRangeIntegerValue
+                        })?;
+                        ec::Key::X25519(ec::X25519Key(key))
+                    }
+                    (_, _) => {
+                        error!("Unexpected EC combination ({:?}, {:?})", curve, curve_type);
+                        return Err(CborError::NonEnumValue);
+                    }
                 };
                 Ok(Self::Ec(curve, key))
             }
@@ -201,6 +233,7 @@ impl AsCborValue for PlaintextKeyMaterial {
                 cbor::value::Value::Integer((Algorithm::Ec as i32).into()),
                 cbor::value::Value::Array(vec![
                     cbor::value::Value::Integer((curve as i32).into()),
+                    cbor::value::Value::Integer((k.curve_type() as i32).into()),
                     cbor::value::Value::Bytes(k.private_key_bytes().to_vec()),
                 ]),
             ],
@@ -223,7 +256,7 @@ impl AsCborValue for PlaintextKeyMaterial {
   ; EC key for a NIST curve is in the form of an ASN.1 DER encoding of a `ECPrivateKey`
   ; structure, as specified by RFC 5915 section 3.
   ; EC key for curve 25519 is the raw key bytes.
-  [{}, [EcCurve, bstr]], ; {}
+  [{}, [EcCurve, CurveType, bstr]], ; {}
 )",
             Algorithm::Aes as i32,
             "Algorithm_Aes",
@@ -288,83 +321,87 @@ fn hmac_sha256(hmac: &dyn Hmac, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Erro
     op.finish()
 }
 
-// TODO: add an Hkdf trait and use this as a default impl of its single method
-/// Perform HKDF with HMAC-SHA256.
-pub fn hkdf<const M: usize>(
-    hmac: &dyn Hmac,
-    mut salt: &[u8],
-    ikm: &[u8],
-    info: &[u8],
-) -> Result<[u8; M], Error> {
-    // HDKF extract
-    if salt.is_empty() {
-        salt = &HKDF_EMPTY_SALT[..];
-    }
-    let prk = hmac_sha256(hmac, salt, ikm)?;
+/// Default implementation of [`Hkdf`] for any type implementing [`Hmac`].
+impl<T: Hmac> Hkdf for T {
+    fn hkdf(
+        &self,
+        mut salt: &[u8],
+        ikm: &[u8],
+        info: &[u8],
+        out_len: usize,
+    ) -> Result<Vec<u8>, Error> {
+        // HDKF extract
+        if salt.is_empty() {
+            salt = &HKDF_EMPTY_SALT[..];
+        }
+        let prk = hmac_sha256(self, salt, ikm)?;
 
-    // HKDF expand
-    let n = (M + SHA256_DIGEST_LEN - 1) / SHA256_DIGEST_LEN;
-    if n > 256 {
-        return Err(km_err!(UnknownError, "overflow in hkdf"));
+        // HKDF expand
+        let n = (out_len + SHA256_DIGEST_LEN - 1) / SHA256_DIGEST_LEN;
+        if n > 256 {
+            return Err(km_err!(UnknownError, "overflow in hkdf"));
+        }
+        let mut t = Vec::with_capacity(SHA256_DIGEST_LEN);
+        let mut okm = Vec::with_capacity(n * SHA256_DIGEST_LEN);
+        let n = n as u8;
+        for idx in 0..n {
+            let mut input = Vec::with_capacity(t.len() + info.len() + 1);
+            input.extend_from_slice(&t);
+            input.extend_from_slice(info);
+            input.push(idx + 1);
+            t = hmac_sha256(self, &prk, &input)?;
+            okm.extend_from_slice(&t);
+        }
+        okm.truncate(out_len);
+        Ok(okm)
     }
-    let mut t = Vec::with_capacity(SHA256_DIGEST_LEN);
-    let mut okm = Vec::with_capacity(n * SHA256_DIGEST_LEN);
-    let n = n as u8;
-    for idx in 0..n {
-        let mut input = Vec::with_capacity(t.len() + info.len() + 1);
-        input.extend_from_slice(&t);
-        input.extend_from_slice(info);
-        input.push(idx + 1);
-        t = hmac_sha256(hmac, &prk, &input)?;
-        okm.extend_from_slice(&t);
-    }
-    okm[..M].try_into().map_err(|_| km_err!(UnknownError, "unexpected slice length"))
 }
 
-// TODO: add an Hkdf trait and use this as a default impl of its single method
-/// Perform AES-CMAC KDF from NIST SP 800-108 in counter mode (see section 5.1).
-pub fn ckdf(
-    cmac: &dyn AesCmac,
-    key: &aes::Key,
-    label: &[u8],
-    chunks: &[&[u8]],
-    out_len: usize,
-) -> Result<Vec<u8>, Error> {
-    // Note: the variables i and l correspond to i and L in the standard.  See page 12 of
-    // http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-108.pdf.
+/// Default implementation of [`Ckdf`] for any type implementing [`AesCmac`].
+impl<T: AesCmac> Ckdf for T {
+    fn ckdf(
+        &self,
+        key: &aes::Key,
+        label: &[u8],
+        chunks: &[&[u8]],
+        out_len: usize,
+    ) -> Result<Vec<u8>, Error> {
+        // Note: the variables i and l correspond to i and L in the standard.  See page 12 of
+        // http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-108.pdf.
 
-    let blocks: u32 = ((out_len + aes::BLOCK_SIZE - 1) / aes::BLOCK_SIZE) as u32;
-    let l = (out_len * 8) as u32; // in bits
-    let net_order_l = l.to_be_bytes();
-    let zero_byte: [u8; 1] = [0];
-    let mut output = vec![0; out_len];
-    let mut output_pos = 0;
+        let blocks: u32 = ((out_len + aes::BLOCK_SIZE - 1) / aes::BLOCK_SIZE) as u32;
+        let l = (out_len * 8) as u32; // in bits
+        let net_order_l = l.to_be_bytes();
+        let zero_byte: [u8; 1] = [0];
+        let mut output = vec![0; out_len];
+        let mut output_pos = 0;
 
-    for i in 1u32..=blocks {
-        // Data to mac is (i:u32 || label || 0x00:u8 || context || L:u32), with integers in network
-        // order.
-        let mut op = cmac.begin(key.clone())?;
-        let net_order_i = i.to_be_bytes();
-        op.update(&net_order_i[..])?;
-        op.update(label)?;
-        op.update(&zero_byte[..])?;
-        for chunk in chunks {
-            op.update(chunk)?;
+        for i in 1u32..=blocks {
+            // Data to mac is (i:u32 || label || 0x00:u8 || context || L:u32), with integers in
+            // network order.
+            let mut op = self.begin(key.clone())?;
+            let net_order_i = i.to_be_bytes();
+            op.update(&net_order_i[..])?;
+            op.update(label)?;
+            op.update(&zero_byte[..])?;
+            for chunk in chunks {
+                op.update(chunk)?;
+            }
+            op.update(&net_order_l[..])?;
+
+            let data = op.finish()?;
+            let copy_len = core::cmp::min(data.len(), output.len() - output_pos);
+            output[output_pos..output_pos + copy_len].clone_from_slice(&data[..copy_len]);
+            output_pos += copy_len;
         }
-        op.update(&net_order_l[..])?;
-
-        let data = op.finish()?;
-        let copy_len = core::cmp::min(data.len(), output.len() - output_pos);
-        output[output_pos..output_pos + copy_len].clone_from_slice(&data[..copy_len]);
-        output_pos += copy_len;
+        if output_pos != output.len() {
+            return Err(km_err!(
+                UnknownError,
+                "finished at {} before end of output at {}",
+                output_pos,
+                output.len()
+            ));
+        }
+        Ok(output)
     }
-    if output_pos != output.len() {
-        return Err(km_err!(
-            UnknownError,
-            "finished at {} before end of output at {}",
-            output_pos,
-            output.len()
-        ));
-    }
-    Ok(output)
 }

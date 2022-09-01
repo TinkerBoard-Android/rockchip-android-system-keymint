@@ -30,6 +30,11 @@ EcCurve = &(
     EcCurve_P521: 3,
     EcCurve_Curve25519: 4,
 )
+CurveType = &(
+    CurveType_Nist: 0,
+    CurveType_EdDsa: 1,
+    CurveType_Xdh: 2,
+)
 ErrorCode = &(
     ErrorCode_Ok: 0,
     ErrorCode_RootOfTrustAlreadySet: -1,
@@ -389,6 +394,7 @@ KeyMintOperation = &(
     SendRootOfTrust: 0x73,
     SetHalInfo: 0x81,
     SetBootInfo: 0x82,
+    SetAttestationIds: 0x83,
 )
 GetHardwareInfoRequest = []
 GetHardwareInfoResponse = [
@@ -571,6 +577,7 @@ PerformOpReq = &(
     [SendRootOfTrust, SendRootOfTrustRequest],
     [SetHalInfo, SetHalInfoRequest],
     [SetBootInfo, SetBootInfoRequest],
+    [SetAttestationIds, SetAttestationIdsRequest],
 )
 PerformOpRsp = &(
     [DeviceGetHardwareInfo, GetHardwareInfoResponse],
@@ -602,6 +609,7 @@ PerformOpRsp = &(
     [SendRootOfTrust, SendRootOfTrustResponse],
     [SetHalInfo, SetHalInfoResponse],
     [SetBootInfo, SetBootInfoResponse],
+    [SetAttestationIds, SetAttestationIdsResponse],
 )
 PerformOpResponse = [
     error_code: ErrorCode,

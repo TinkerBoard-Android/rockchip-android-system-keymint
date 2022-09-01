@@ -74,6 +74,7 @@ impl Key {
     ///        publicExponent     INTEGER  }  -- e
     ///     ```
     pub fn subject_public_key_info(&self) -> Vec<u8> {
+        // TODO: implement
         vec![]
     }
 }
