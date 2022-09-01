@@ -11,12 +11,12 @@ pub struct Implementation<'a> {
     /// Random number generator.
     pub rng: &'a mut dyn Rng,
 
-    /// Secure deletion secret manager.
+    /// Secure deletion secret manager.  If not available, rollback-resistant
+    /// keys will not be supported.
     pub sdd_mgr: Option<&'a mut dyn keyblob::SecureDeletionSecretManager>,
 
-    /// A local clock, if available. If not available, KeyMint will require
-    /// timestamp tokens to be provided by an external ISecureClock (which
-    /// shares a common key).
+    /// A local clock, if available. If not available, KeyMint will require timestamp tokens to
+    /// be provided by an external `ISecureClock` (with which it shares a common key).
     pub clock: Option<&'a dyn MonotonicClock>,
 
     /// A constant-time equality implementation.
@@ -37,8 +37,11 @@ pub struct Implementation<'a> {
     /// EC implementation.
     pub ec: &'a dyn Ec,
 
-    /// AES-CMAC implementation.
-    pub cmac: &'a dyn AesCmac,
+    /// CKDF implementation.
+    pub ckdf: &'a dyn Ckdf,
+
+    /// HKDF implementation.
+    pub hkdf: &'a dyn Hkdf,
 }
 
 /// Abstraction of a random number generator that is cryptographically secure
@@ -120,7 +123,7 @@ pub trait Aes {
         key: aes::Key,
         mode: aes::CipherMode,
         dir: SymmetricOperation,
-    ) -> Result<Box<dyn AesOperation>, Error>;
+    ) -> Result<Box<dyn EmittingOperation>, Error>;
 
     /// Create an AES-GCM operation.
     fn begin_aead(
@@ -128,23 +131,7 @@ pub trait Aes {
         key: aes::Key,
         mode: aes::GcmMode,
         dir: SymmetricOperation,
-    ) -> Result<Box<dyn AesGcmOperation>, Error>;
-}
-
-/// Abstraction of an in-progress AES operation.
-pub trait AesOperation {
-    /// Update encryption with data.
-    fn update(&mut self, data: &[u8]) -> Result<Vec<u8>, Error>;
-
-    /// Complete operation, consuming `self`.
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
-}
-
-/// Abstraction of an in-progress AES-GCM operation.
-pub trait AesGcmOperation: AesOperation {
-    /// Update additional data.  Implementations can assume that all calls to `update_aad()`
-    /// will occur before any calls to `update()` or `finish()`.
-    fn update_aad(&mut self, aad: &[u8]) -> Result<(), Error>;
+    ) -> Result<Box<dyn AadOperation>, Error>;
 }
 
 /// Abstraction of 3-DES functionality.
@@ -152,7 +139,7 @@ pub trait Des {
     /// Generate a triple DES key.
     fn generate_key(&self, rng: &mut dyn Rng) -> Result<PlaintextKeyMaterial, Error> {
         let mut key = vec![0; 24];
-        // Note: no effort is made to get correct parity bits.
+        // Note: parity bits must be ignored.
         rng.fill_bytes(&mut key[..]);
         Ok(PlaintextKeyMaterial::TripleDes(des::Key::new(key)?))
     }
@@ -172,16 +159,7 @@ pub trait Des {
         key: des::Key,
         mode: des::Mode,
         dir: SymmetricOperation,
-    ) -> Result<Box<dyn DesOperation>, Error>;
-}
-
-/// Abstraction of an in-progress DES operation.
-pub trait DesOperation {
-    /// Update encryption with data.
-    fn update(&mut self, data: &[u8]) -> Result<Vec<u8>, Error>;
-
-    /// Complete operation, consuming `self`.
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
+    ) -> Result<Box<dyn EmittingOperation>, Error>;
 }
 
 /// Abstraction of HMAC functionality.
@@ -211,16 +189,11 @@ pub trait Hmac {
     /// Create an HMAC operation. Implementations can assume that:
     /// - `key` will have length in range `8..=64` bytes.
     /// - `digest` will not be [`Digest::None`]
-    fn begin(&self, key: hmac::Key, digest: Digest) -> Result<Box<dyn HmacOperation>, Error>;
-}
-
-/// Abstraction of an in-progress HMAC operation.
-pub trait HmacOperation {
-    /// Add data to the HMAC operation.
-    fn update(&mut self, data: &[u8]) -> Result<(), Error>;
-
-    /// Complete the HMAC operation (consuming `self`) and return the full result.
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
+    fn begin(
+        &self,
+        key: hmac::Key,
+        digest: Digest,
+    ) -> Result<Box<dyn AccumulatingOperation>, Error>;
 }
 
 /// Abstraction of AES-CMAC functionality. (Note that this is not exposed in the KeyMint HAL API
@@ -228,16 +201,7 @@ pub trait HmacOperation {
 pub trait AesCmac {
     /// Create an AES-CMAC operation. Implementations can assume that `key` will have length
     /// of either 16 (AES-128) or 32 (AES-256).
-    fn begin(&self, key: aes::Key) -> Result<Box<dyn AesCmacOperation>, Error>;
-}
-
-/// Abstraction of an in-progress AES-CMAC operation.
-pub trait AesCmacOperation {
-    /// Add data to the CMAC operation.
-    fn update(&mut self, data: &[u8]) -> Result<(), Error>;
-
-    /// Complete the CMAC operation (consuming `self`) and return the result.
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
+    fn begin(&self, key: aes::Key) -> Result<Box<dyn AccumulatingOperation>, Error>;
 }
 
 /// Abstraction of RSA functionality.
@@ -261,7 +225,7 @@ pub trait Rsa {
         &self,
         key: rsa::Key,
         mode: rsa::DecryptionMode,
-    ) -> Result<Box<dyn RsaDecryptOperation>, Error>;
+    ) -> Result<Box<dyn AccumulatingOperation>, Error>;
 
     /// Create an RSA signing operation.  For [`rsa::SignMode::Pkcs1_1_5Padding(Digest::None)`] the
     /// implementation should reject (with [`ErrorCode::InvalidInputLength`]) accumulated input
@@ -271,25 +235,7 @@ pub trait Rsa {
         &self,
         key: rsa::Key,
         mode: rsa::SignMode,
-    ) -> Result<Box<dyn RsaSignOperation>, Error>;
-}
-
-/// Abstraction of an in-progress RSA decryption operation.
-pub trait RsaDecryptOperation {
-    /// Add data to the operation.
-    fn update(&mut self, data: &[u8]) -> Result<(), Error>;
-
-    /// Complete the operation (consuming `self`) and return the result.
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
-}
-
-/// Abstraction of an in-progress RSA signing operation.
-pub trait RsaSignOperation {
-    /// Add data to the operation.
-    fn update(&mut self, data: &[u8]) -> Result<(), Error>;
-
-    /// Complete the operation (consuming `self`) and return the result.
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
+    ) -> Result<Box<dyn AccumulatingOperation>, Error>;
 }
 
 /// Abstraction of EC functionality.
@@ -307,61 +253,121 @@ pub trait Ec {
     /// Generate an X25519 key.
     fn generate_x25519_key(&self, rng: &mut dyn Rng) -> Result<PlaintextKeyMaterial, Error>;
 
-    /// Import an EC RSA key of known curve in PKCS#8 format.
+    /// Import an EC key of known curve in PKCS#8 format.
     fn import_pkcs8_key(&self, curve: EcCurve, data: &[u8]) -> Result<PlaintextKeyMaterial, Error>;
 
-    fn import_raw_curve25519_key(&self, data: &[u8]) -> Result<PlaintextKeyMaterial, Error> {
-        // TODO: length checks
-        Ok(PlaintextKeyMaterial::Ec(
-            EcCurve::Curve25519,
-            ec::Key::Curve25519(ec::Curve25519Key(data.to_vec())),
-        ))
+    /// Import a 32-byte raw Ed25519 key.
+    fn import_raw_ed25519_key(&self, data: &[u8]) -> Result<PlaintextKeyMaterial, Error> {
+        let key = data.try_into().map_err(|_e| {
+            km_err!(InvalidInputLength, "import Ed25519 key of incorrect len {}", data.len())
+        })?;
+        Ok(PlaintextKeyMaterial::Ec(EcCurve::Curve25519, ec::Key::Ed25519(ec::Ed25519Key(key))))
     }
 
-    /// Create an EC key agreement operation.
-    fn begin_agree(&self, key: ec::Key) -> Result<Box<dyn EcAgreeOperation>, Error>;
+    /// Import a 32-byte raw X25519 key.
+    fn import_raw_x25519_key(&self, data: &[u8]) -> Result<PlaintextKeyMaterial, Error> {
+        let key = data.try_into().map_err(|_e| {
+            km_err!(InvalidInputLength, "import X25519 key of incorrect len {}", data.len())
+        })?;
+        Ok(PlaintextKeyMaterial::Ec(EcCurve::Curve25519, ec::Key::X25519(ec::X25519Key(key))))
+    }
+
+    /// Return the public key data that corresponds to the provided private `key`, as a SEC-1
+    /// encoded point.
+    fn nist_public_key(&self, key: &ec::NistKey, curve: ec::NistCurve) -> Result<Vec<u8>, Error>;
+
+    /// Return the raw public key data that corresponds to the provided private `key`.
+    fn ed25519_public_key(&self, key: &ec::Ed25519Key) -> Result<Vec<u8>, Error>;
+
+    /// Return the raw public key data that corresponds to the provided private `key`.
+    fn x25519_public_key(&self, key: &ec::X25519Key) -> Result<Vec<u8>, Error>;
+
+    /// Create an EC key agreement operation.  The accumulated input for the operation is expected
+    /// to be the peer's public key, provided as an ASN.1 DER-encoded `SubjectPublicKeyInfo`.
+    fn begin_agree(&self, key: ec::Key) -> Result<Box<dyn AccumulatingOperation>, Error>;
 
     /// Create an EC signing operation.  For Ed25519 signing operations, the implementation should
     /// reject (with [`ErrorCode::InvalidInputLength`]) accumulated data that is larger than
     /// [`ec::MAX_ED25519_MSG_SIZE`].
-    fn begin_sign(&self, key: ec::Key, digest: Digest) -> Result<Box<dyn EcSignOperation>, Error>;
+    fn begin_sign(
+        &self,
+        key: ec::Key,
+        digest: Digest,
+    ) -> Result<Box<dyn AccumulatingOperation>, Error>;
 }
 
-/// Abstraction of an in-progress EC key agreement operation.
-pub trait EcAgreeOperation {
-    /// Add data to the operation.
-    fn update(&mut self, data: &[u8]) -> Result<(), Error>;
+/// Abstraction of an in-progress operation that emits data as it progresses.
+pub trait EmittingOperation {
+    /// Update operation with data.
+    fn update(&mut self, data: &[u8]) -> Result<Vec<u8>, Error>;
 
-    /// Complete the operation (consuming `self`) and return the result.
-    /// The accumulated input for the operation is expected to be the peer's
-    /// public key, provided as an ASN.1 DER-encoded `SubjectPublicKeyInfo`.
+    /// Complete operation, consuming `self`.
     fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
 }
 
-/// Abstraction of an in-progress EC signing operation.
-pub trait EcSignOperation {
-    /// Add data to the operation.
+/// Abstraction of an in-progress operation that has authenticated associated data.
+pub trait AadOperation: EmittingOperation {
+    /// Update additional data.  Implementations can assume that all calls to `update_aad()`
+    /// will occur before any calls to `update()` or `finish()`.
+    fn update_aad(&mut self, aad: &[u8]) -> Result<(), Error>;
+}
+
+/// Abstraction of an in-progress operation that only emits data when it completes.
+pub trait AccumulatingOperation {
+    /// Update operation with data.
     fn update(&mut self, data: &[u8]) -> Result<(), Error>;
 
-    /// Complete the operation (consuming `self`) and return the result.
+    /// Complete operation, consuming `self`.
     fn finish(self: Box<Self>) -> Result<Vec<u8>, Error>;
+}
+
+/// Abstraction of HKDF key derivation with HMAC-SHA256.
+///
+/// A default implementation of this trait is available (in `crypto.rs`) for any type that
+/// implements [`Hmac`].
+pub trait Hkdf {
+    fn hkdf(&self, salt: &[u8], ikm: &[u8], info: &[u8], out_len: usize) -> Result<Vec<u8>, Error>;
+}
+
+/// Abstraction of CKDF key derivation with AES-CMAC KDF from NIST SP 800-108 in counter mode (see
+/// section 5.1).
+///
+/// Aa default implementation of this trait is available (in `crypto.rs`) for any type that
+/// implements [`AesCmac`].
+pub trait Ckdf {
+    fn ckdf(
+        &self,
+        key: &aes::Key,
+        label: &[u8],
+        chunks: &[&[u8]],
+        out_len: usize,
+    ) -> Result<Vec<u8>, Error>;
 }
 
 ////////////////////////////////////////////////////////////
 // No-op implementations of traits for testing.
 // TODO: remove these
 
+/// Return the type name for a type.  Only suitable for debug output.
+fn type_name_of<T>(_: T) -> &'static str {
+    core::any::type_name::<T>()
+}
+
+/// Macro to emit the name of the current function.
 macro_rules! function {
     () => {{
+        // Add an inner function `f` to the current block.
         fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str {
-            core::any::type_name::<T>()
-        }
+        // Retrieve the type name of the added inner function,
+        // something like `kmr::SomeType::a_method::f`.
         let name = type_name_of(f);
+        // Lop off the trailing `::f`.
         &name[..name.len() - 3]
     }};
 }
 
+/// Macro to emit an error log indicating that an unimplemented function
+/// has been invoked (and where it is).
 macro_rules! log_unimpl {
     () => {
         error!(
@@ -372,6 +378,8 @@ macro_rules! log_unimpl {
         );
     };
 }
+
+/// Mark a method as unimplemented (log error, return `ErrorCode::Unimplemented`)
 macro_rules! unimpl {
     () => {
         log_unimpl!();
@@ -416,7 +424,7 @@ impl Aes for NoOpAes {
         _key: aes::Key,
         _mode: aes::CipherMode,
         _dir: SymmetricOperation,
-    ) -> Result<Box<dyn AesOperation>, Error> {
+    ) -> Result<Box<dyn EmittingOperation>, Error> {
         unimpl!();
     }
     fn begin_aead(
@@ -424,7 +432,7 @@ impl Aes for NoOpAes {
         _key: aes::Key,
         _mode: aes::GcmMode,
         _dir: SymmetricOperation,
-    ) -> Result<Box<dyn AesGcmOperation>, Error> {
+    ) -> Result<Box<dyn AadOperation>, Error> {
         unimpl!();
     }
 }
@@ -436,21 +444,25 @@ impl Des for NoOpDes {
         _key: des::Key,
         _mode: des::Mode,
         _dir: SymmetricOperation,
-    ) -> Result<Box<dyn DesOperation>, Error> {
+    ) -> Result<Box<dyn EmittingOperation>, Error> {
         unimpl!();
     }
 }
 
 pub struct NoOpHmac;
 impl Hmac for NoOpHmac {
-    fn begin(&self, _key: hmac::Key, _digest: Digest) -> Result<Box<dyn HmacOperation>, Error> {
+    fn begin(
+        &self,
+        _key: hmac::Key,
+        _digest: Digest,
+    ) -> Result<Box<dyn AccumulatingOperation>, Error> {
         unimpl!();
     }
 }
 
 pub struct NoOpAesCmac;
 impl AesCmac for NoOpAesCmac {
-    fn begin(&self, _key: aes::Key) -> Result<Box<dyn AesCmacOperation>, Error> {
+    fn begin(&self, _key: aes::Key) -> Result<Box<dyn AccumulatingOperation>, Error> {
         unimpl!();
     }
 }
@@ -477,7 +489,7 @@ impl Rsa for NoOpRsa {
         &self,
         _key: rsa::Key,
         _mode: rsa::DecryptionMode,
-    ) -> Result<Box<dyn RsaDecryptOperation>, Error> {
+    ) -> Result<Box<dyn AccumulatingOperation>, Error> {
         unimpl!();
     }
 
@@ -485,7 +497,7 @@ impl Rsa for NoOpRsa {
         &self,
         _key: rsa::Key,
         _mode: rsa::SignMode,
-    ) -> Result<Box<dyn RsaSignOperation>, Error> {
+    ) -> Result<Box<dyn AccumulatingOperation>, Error> {
         unimpl!();
     }
 }
@@ -516,7 +528,19 @@ impl Ec for NoOpEc {
         unimpl!();
     }
 
-    fn begin_agree(&self, _key: ec::Key) -> Result<Box<dyn EcAgreeOperation>, Error> {
+    fn nist_public_key(&self, _key: &ec::NistKey, _curve: ec::NistCurve) -> Result<Vec<u8>, Error> {
+        unimpl!();
+    }
+
+    fn ed25519_public_key(&self, _key: &ec::Ed25519Key) -> Result<Vec<u8>, Error> {
+        unimpl!();
+    }
+
+    fn x25519_public_key(&self, _key: &ec::X25519Key) -> Result<Vec<u8>, Error> {
+        unimpl!();
+    }
+
+    fn begin_agree(&self, _key: ec::Key) -> Result<Box<dyn AccumulatingOperation>, Error> {
         unimpl!();
     }
 
@@ -524,7 +548,7 @@ impl Ec for NoOpEc {
         &self,
         _key: ec::Key,
         _digest: Digest,
-    ) -> Result<Box<dyn EcSignOperation>, Error> {
+    ) -> Result<Box<dyn AccumulatingOperation>, Error> {
         unimpl!();
     }
 }

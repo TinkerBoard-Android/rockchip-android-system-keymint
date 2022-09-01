@@ -495,7 +495,7 @@ macro_rules! expect_err {
 pub fn hex_encode(data: &[u8]) -> String {
     let mut result = String::new();
     for byte in data {
-        let _ =  &write!(result, "{:02x}", byte);
+        let _ = &write!(result, "{:02x}", byte);
     }
     result
 }
