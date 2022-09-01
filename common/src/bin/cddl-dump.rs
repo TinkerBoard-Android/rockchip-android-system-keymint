@@ -23,6 +23,7 @@ fn main() {
     show_schema::<BlockMode>();
     show_schema::<Digest>();
     show_schema::<EcCurve>();
+    show_schema::<crypto::CurveType>();
     show_schema::<ErrorCode>();
     show_schema::<HardwareAuthenticatorType>();
     show_schema::<KeyFormat>();
