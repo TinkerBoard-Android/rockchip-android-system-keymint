@@ -115,10 +115,8 @@ impl KeyBlob {
     }
 
     /// Parse a serialized [`KeyBlob`].
-    // TODO: make hmac non-optional (it's currently optional to allow a cargo build
-    // of the command-line keyblob parser tool to work).
     pub fn deserialize<E: crypto::ConstTimeEq, H: crypto::Hmac>(
-        hmac: Option<&H>,
+        hmac: &H,
         mut data: &[u8],
         hidden: &[KeyParam],
         comparator: E,
@@ -128,13 +126,10 @@ impl KeyBlob {
         }
 
         // Check the HMAC in the last 8 bytes before doing anything else.
-        if let Some(hmac) = hmac {
-            let mac = &data[data.len() - Self::MAC_LEN..];
-            let computed_mac =
-                Self::compute_hmac(hmac, &data[..data.len() - Self::MAC_LEN], hidden)?;
-            if comparator.ne(mac, &computed_mac) {
-                return Err(km_err!(InvalidKeyBlob, "invalid key blob"));
-            }
+        let mac = &data[data.len() - Self::MAC_LEN..];
+        let computed_mac = Self::compute_hmac(hmac, &data[..data.len() - Self::MAC_LEN], hidden)?;
+        if comparator.ne(mac, &computed_mac) {
+            return Err(km_err!(InvalidKeyBlob, "invalid key blob"));
         }
 
         let version = consume_u8(&mut data)?;

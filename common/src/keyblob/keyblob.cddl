@@ -43,7 +43,7 @@ PlaintextKeyMaterial = &(
   ; EC key for a NIST curve is in the form of an ASN.1 DER encoding of a `ECPrivateKey`
   ; structure, as specified by RFC 5915 section 3.
   ; EC key for curve 25519 is the raw key bytes.
-  [3, [EcCurve, bstr]], ; Algorithm_Ec
+  [3, [EcCurve, CurveType, bstr]], ; Algorithm_Ec
 )
 SecureDeletionSlot = int
 SecureDeletionData = [
@@ -54,6 +54,7 @@ RootOfTrustInfo = [
     verified_boot_key: bstr .size 32,
     device_boot_locked: bool,
     verified_boot_state: VerifiedBootState,
+    verified_boot_hash: bstr .size 32,
 ]
 VerifiedBootState = &(
     VerifiedBootState_Verified: 0,
@@ -222,6 +223,11 @@ EcCurve = &(
     EcCurve_P384: 2,
     EcCurve_P521: 3,
     EcCurve_Curve25519: 4,
+)
+CurveType = &(
+    CurveType_Nist: 0,
+    CurveType_EdDsa: 1,
+    CurveType_Xdh: 2,
 )
 KeyOrigin = &(
     KeyOrigin_Generated: 0,

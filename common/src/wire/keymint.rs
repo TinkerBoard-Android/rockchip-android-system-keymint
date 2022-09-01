@@ -20,11 +20,8 @@ use core::mem::size_of;
 use enumn::N;
 use kmr_derive::AsCborValue;
 
-/// ASN.1 DER encoding of the default certificate serial number of 1
-pub const DEFAULT_CERT_SERIAL: &[u8] = &[
-    0x02, 0x01, // INTEGER length 1
-    0x01, // value 1
-];
+/// Default certificate serial number of 1.
+pub const DEFAULT_CERT_SERIAL: &[u8] = &[0x01];
 
 /// ASN.1 DER encoding of the default certificate subject of 'CN=Android Keystore Key'.
 pub const DEFAULT_CERT_SUBJECT: &[u8] = &[
@@ -927,6 +924,11 @@ pub(crate) fn tag_type(tag: Tag) -> TagType {
         x if x == TagType::UlongRep as i32 => TagType::UlongRep,
         _ => TagType::Invalid,
     }
+}
+
+/// Determine the raw tag value with tag type information stripped out.
+pub fn raw_tag_value(tag: Tag) -> u32 {
+    (tag as u32) & 0x0fffffffu32
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
