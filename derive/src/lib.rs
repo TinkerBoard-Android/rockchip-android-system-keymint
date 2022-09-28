@@ -65,21 +65,28 @@ fn to_val_struct(data: &Data) -> TokenStream {
                 Fields::Named(ref fields) => {
                     // Expands to an expression like
                     //
-                    //     Ok(ciborium::value::Value::Array(vec![
-                    //         self.x.to_cbor_value()?,
-                    //         self.y.to_cbor_value()?,
-                    //         self.z.to_cbor_value()?,
-                    //     ]))
-                    //
-                    // but using fully qualified function call syntax.
+                    //     {
+                    //         let mut v = Vec::new();
+                    //         v.try_reserve(3).map_err(|_e| CborError::AllocationFailed)?;
+                    //         v.push(AsCborValue::to_cbor_value(self.x)?);
+                    //         v.push(AsCborValue::to_cbor_value(self.y)?);
+                    //         v.push(AsCborValue::to_cbor_value(self.z)?);
+                    //         Ok(ciborium::value::Value::Array(v))
+                    //     }
+                    let nfields = fields.named.len();
                     let recurse = fields.named.iter().map(|f| {
                         let name = &f.ident;
                         quote_spanned! {f.span()=>
-                            AsCborValue::to_cbor_value(self.#name)?
+                            v.push(AsCborValue::to_cbor_value(self.#name)?)
                         }
                     });
                     quote! {
-                        Ok(ciborium::value::Value::Array(vec![ #(#recurse, )* ]))
+                        {
+                            let mut v = Vec::new();
+                            v.try_reserve(#nfields).map_err(|_e| CborError::AllocationFailed)?;
+                            #(#recurse; )*
+                            Ok(ciborium::value::Value::Array(v))
+                        }
                     }
                 }
                 Fields::Unnamed(ref fields) if fields.unnamed.len() == 1 => {
@@ -93,20 +100,29 @@ fn to_val_struct(data: &Data) -> TokenStream {
                 Fields::Unnamed(ref fields) => {
                     // Expands to an expression like
                     //
-                    //     Ok(ciborium::value::Value::Array(vec![
-                    //         self.0.to_cbor_value()?,
-                    //         self.1.to_cbor_value()?,
-                    //         self.2.to_cbor_value()?,
-                    //     ]))
                     //
+                    //     {
+                    //         let mut v = Vec::new();
+                    //         v.try_reserve(3).map_err(|_e| CborError::AllocationFailed)?;
+                    //         v.push(AsCborValue::to_cbor_value(self.0)?);
+                    //         v.push(AsCborValue::to_cbor_value(self.1)?);
+                    //         v.push(AsCborValue::to_cbor_value(self.2)?);
+                    //         Ok(ciborium::value::Value::Array(v))
+                    //     }
+                    let nfields = fields.unnamed.len();
                     let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
                         let index = Index::from(i);
                         quote_spanned! {f.span()=>
-                            AsCborValue::to_cbor_value(self.#index)?
+                            v.push(AsCborValue::to_cbor_value(self.#index)?)
                         }
                     });
                     quote! {
-                        Ok(ciborium::value::Value::Array(vec![ #(#recurse, )* ]))
+                        {
+                            let mut v = Vec::new();
+                            v.try_reserve(#nfields).map_err(|_e| CborError::AllocationFailed)?;
+                            #(#recurse; )*
+                            Ok(ciborium::value::Value::Array(v))
+                        }
                     }
                 }
                 Fields::Unit => unimplemented!(),
@@ -122,7 +138,8 @@ fn to_val_struct(data: &Data) -> TokenStream {
     }
 }
 
-/// Generate an expression to convert a `ciborium::value::Value` into an instance of a compound type.
+/// Generate an expression to convert a `ciborium::value::Value` into an instance of a compound
+/// type.
 fn from_val_struct(data: &Data) -> TokenStream {
     match data {
         Data::Struct(ref data) => {
@@ -216,7 +233,9 @@ fn from_val_struct(data: &Data) -> TokenStream {
                             _ => return cbor_type_error(&value, "arr"),
                         };
                         if a.len() != #nfields {
-                            return Err(CborError::UnexpectedItem("arr", concat!("arr len ", stringify!(#nfields))));
+                            return Err(CborError::UnexpectedItem("arr",
+                                                                 concat!("arr len ",
+                                                                         stringify!(#nfields))));
                         }
                         // Fields specified in reverse order to reduce shifting.
                         #(#recurse1)*

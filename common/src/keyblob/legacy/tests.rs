@@ -133,7 +133,7 @@ fn test_serialize_encrypted_keyblob() {
         let data = hex_decode(hex_data).unwrap();
         let got = EncryptedKeyBlob::deserialize(&data).unwrap();
         assert_eq!(got, want);
-        let new_data = got.serialize();
+        let new_data = got.serialize().unwrap();
         assert_eq!(new_data, data);
     }
 }

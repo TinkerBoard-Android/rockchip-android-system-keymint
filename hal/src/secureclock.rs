@@ -4,7 +4,7 @@ use super::{ChannelHalService, SerializedChannel};
 use crate::binder;
 use crate::hal::secureclock::{ISecureClock, TimeStampToken::TimeStampToken};
 use crate::hal::Innto;
-use kmr_common::wire::*;
+use kmr_wire::*;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// `ISecureClock` implementation which converts all method invocations to serialized requests that

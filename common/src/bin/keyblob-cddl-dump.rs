@@ -1,5 +1,5 @@
-use kmr_common::wire::keymint;
 use kmr_common::{crypto, keyblob};
+use kmr_wire::keymint;
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -12,7 +12,7 @@ struct AccumulatedSchema {
 
 impl AccumulatedSchema {
     /// Add a new type to the accumulated schema, along with a sample instance of the type.
-    fn add<T: kmr_common::AsCborValue>(&mut self, sample: T) {
+    fn add<T: kmr_wire::AsCborValue>(&mut self, sample: T) {
         if let (Some(name), Some(schema)) = (<T>::cddl_typename(), <T>::cddl_schema()) {
             self.add_name_schema(&name, &schema);
             self.samples.insert(name, sample.into_vec().unwrap());
@@ -84,7 +84,7 @@ fn main() {
         "[ protected: bstr, unprotected: { * (int / tstr) => any }, ciphertext: bstr / nil ]",
     );
 
-    schema.add(crypto::PlaintextKeyMaterial::Aes(crypto::aes::Key::Aes128([0u8; 16])));
+    schema.add(crypto::KeyMaterial::Aes(crypto::aes::Key::Aes128([0u8; 16]).into()));
     schema.add(keyblob::SecureDeletionSlot(1));
     schema.add(keyblob::SecureDeletionData {
         factory_reset_secret: [0; 32],
@@ -115,13 +115,13 @@ fn main() {
     schema.add(keymint::PaddingMode::None);
 
     schema.add(keymint::DateTime { ms_since_epoch: 22_593_600_000 });
-    schema.add(crypto::KeySizeInBits(256));
-    schema.add(crypto::rsa::Exponent(65537));
+    schema.add(kmr_wire::KeySizeInBits(256));
+    schema.add(kmr_wire::RsaExponent(65537));
 
     println!(
    "; encrypted_key_material is AES-GCM encrypted with:\n\
     ; - key derived as described below\n\
-    ; - plaintext is the CBOR-serialization of `PlaintextKeyMaterial`\n\
+    ; - plaintext is the CBOR-serialization of `KeyMaterial`\n\
     ; - nonce value is fixed, all zeroes\n\
     ; - no additional data\n\
     ;\n\

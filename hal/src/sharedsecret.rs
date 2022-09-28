@@ -6,7 +6,7 @@ use crate::hal::{
     Innto,
 };
 use crate::{ChannelHalService, SerializedChannel};
-use kmr_common::wire::*;
+use kmr_wire::*;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// `ISharedSecret` implementation which converts all method invocations to serialized requests that

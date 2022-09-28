@@ -12,11 +12,10 @@
 //! - `KeyParam` is a Rust `enum` that is used in place of the `KeyParameter` struct, meaning...
 //! - `KeyParameterValue` is not included here.
 
-use crate::{cbor, cbor_type_error, crypto, AsCborValue, CborError};
+use crate::{cbor, cbor_type_error, vec_try, AsCborValue, CborError, KeySizeInBits, RsaExponent};
 use alloc::format;
 use alloc::string::{String, ToString};
-use alloc::{vec, vec::Vec};
-use core::mem::size_of;
+use alloc::vec::Vec;
 use enumn::N;
 use kmr_derive::AsCborValue;
 
@@ -52,7 +51,7 @@ impl TryFrom<i32> for VerifiedBootState {
 }
 
 /// Representation of a date/time.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateTime {
     pub ms_since_epoch: i64,
 }
@@ -320,14 +319,14 @@ try_from_n!(KeyOrigin);
 pub enum KeyParam {
     Purpose(KeyPurpose),
     Algorithm(Algorithm),
-    KeySize(crypto::KeySizeInBits),
+    KeySize(KeySizeInBits),
     BlockMode(BlockMode),
     Digest(Digest),
     Padding(PaddingMode),
     CallerNonce,
     MinMacLength(u32),
     EcCurve(EcCurve),
-    RsaPublicExponent(crypto::rsa::Exponent),
+    RsaPublicExponent(RsaExponent),
     IncludeUniqueId,
     RsaOaepMgfDigest(Digest),
     BootloaderOnly,
@@ -476,11 +475,11 @@ impl crate::AsCborValue for KeyParam {
             Tag::EcCurve => KeyParam::EcCurve(<EcCurve>::from_cbor_value(raw)?),
             Tag::Origin => KeyParam::Origin(<KeyOrigin>::from_cbor_value(raw)?),
             Tag::Purpose => KeyParam::Purpose(<KeyPurpose>::from_cbor_value(raw)?),
-            Tag::KeySize => KeyParam::KeySize(<crypto::KeySizeInBits>::from_cbor_value(raw)?),
+            Tag::KeySize => KeyParam::KeySize(<KeySizeInBits>::from_cbor_value(raw)?),
             Tag::CallerNonce => KeyParam::CallerNonce,
             Tag::MinMacLength => KeyParam::MinMacLength(<u32>::from_cbor_value(raw)?),
             Tag::RsaPublicExponent => {
-                KeyParam::RsaPublicExponent(<crypto::rsa::Exponent>::from_cbor_value(raw)?)
+                KeyParam::RsaPublicExponent(<RsaExponent>::from_cbor_value(raw)?)
             }
             Tag::IncludeUniqueId => {
                 check_bool(raw)?;
@@ -664,7 +663,7 @@ impl crate::AsCborValue for KeyParam {
             KeyParam::CertificateNotAfter(v) => (Tag::CertificateNotAfter, v.to_cbor_value()?),
             KeyParam::MaxBootLevel(v) => (Tag::MaxBootLevel, v.to_cbor_value()?),
         };
-        Ok(cbor::value::Value::Array(vec![tag.to_cbor_value()?, val]))
+        Ok(cbor::value::Value::Array(vec_try![tag.to_cbor_value()?, val]?))
     }
     fn cddl_typename() -> Option<String> {
         Some("KeyParam".to_string())
@@ -753,7 +752,7 @@ impl crate::AsCborValue for KeyParam {
             KeyPurpose::cddl_ref(),
             "Tag_Purpose",
             Tag::KeySize as i32,
-            crypto::KeySizeInBits::cddl_ref(),
+            KeySizeInBits::cddl_ref(),
             "Tag_KeySize",
             Tag::CallerNonce as i32,
             Vec::<u8>::cddl_ref(),
@@ -762,7 +761,7 @@ impl crate::AsCborValue for KeyParam {
             u32::cddl_ref(),
             "Tag_MinMacLength",
             Tag::RsaPublicExponent as i32,
-            crypto::rsa::Exponent::cddl_ref(),
+            RsaExponent::cddl_ref(),
             "Tag_RsaPublicExponent",
             Tag::IncludeUniqueId as i32,
             "true",
@@ -910,7 +909,7 @@ impl crate::AsCborValue for KeyParam {
 }
 
 /// Determine the tag type for a tag, based on the top 4 bits of the tag number.
-pub(crate) fn tag_type(tag: Tag) -> TagType {
+pub fn tag_type(tag: Tag) -> TagType {
     match ((tag as u32) & 0xf0000000u32) as i32 {
         x if x == TagType::Enum as i32 => TagType::Enum,
         x if x == TagType::EnumRep as i32 => TagType::EnumRep,
@@ -929,6 +928,75 @@ pub(crate) fn tag_type(tag: Tag) -> TagType {
 /// Determine the raw tag value with tag type information stripped out.
 pub fn raw_tag_value(tag: Tag) -> u32 {
     (tag as u32) & 0x0fffffffu32
+}
+
+pub fn from_raw_tag_value(raw_tag: u32) -> Tag {
+    match raw_tag {
+        x if x == raw_tag_value(Tag::Purpose) => Tag::Purpose,
+        x if x == raw_tag_value(Tag::Algorithm) => Tag::Algorithm,
+        x if x == raw_tag_value(Tag::KeySize) => Tag::KeySize,
+        x if x == raw_tag_value(Tag::BlockMode) => Tag::BlockMode,
+        x if x == raw_tag_value(Tag::Digest) => Tag::Digest,
+        x if x == raw_tag_value(Tag::Padding) => Tag::Padding,
+        x if x == raw_tag_value(Tag::CallerNonce) => Tag::CallerNonce,
+        x if x == raw_tag_value(Tag::MinMacLength) => Tag::MinMacLength,
+        x if x == raw_tag_value(Tag::EcCurve) => Tag::EcCurve,
+        x if x == raw_tag_value(Tag::RsaPublicExponent) => Tag::RsaPublicExponent,
+        x if x == raw_tag_value(Tag::IncludeUniqueId) => Tag::IncludeUniqueId,
+        x if x == raw_tag_value(Tag::RsaOaepMgfDigest) => Tag::RsaOaepMgfDigest,
+        x if x == raw_tag_value(Tag::BootloaderOnly) => Tag::BootloaderOnly,
+        x if x == raw_tag_value(Tag::RollbackResistance) => Tag::RollbackResistance,
+        x if x == raw_tag_value(Tag::HardwareType) => Tag::HardwareType,
+        x if x == raw_tag_value(Tag::EarlyBootOnly) => Tag::EarlyBootOnly,
+        x if x == raw_tag_value(Tag::ActiveDatetime) => Tag::ActiveDatetime,
+        x if x == raw_tag_value(Tag::OriginationExpireDatetime) => Tag::OriginationExpireDatetime,
+        x if x == raw_tag_value(Tag::UsageExpireDatetime) => Tag::UsageExpireDatetime,
+        x if x == raw_tag_value(Tag::MinSecondsBetweenOps) => Tag::MinSecondsBetweenOps,
+        x if x == raw_tag_value(Tag::MaxUsesPerBoot) => Tag::MaxUsesPerBoot,
+        x if x == raw_tag_value(Tag::UsageCountLimit) => Tag::UsageCountLimit,
+        x if x == raw_tag_value(Tag::UserId) => Tag::UserId,
+        x if x == raw_tag_value(Tag::UserSecureId) => Tag::UserSecureId,
+        x if x == raw_tag_value(Tag::NoAuthRequired) => Tag::NoAuthRequired,
+        x if x == raw_tag_value(Tag::UserAuthType) => Tag::UserAuthType,
+        x if x == raw_tag_value(Tag::AuthTimeout) => Tag::AuthTimeout,
+        x if x == raw_tag_value(Tag::AllowWhileOnBody) => Tag::AllowWhileOnBody,
+        x if x == raw_tag_value(Tag::TrustedUserPresenceRequired) => {
+            Tag::TrustedUserPresenceRequired
+        }
+        x if x == raw_tag_value(Tag::TrustedConfirmationRequired) => {
+            Tag::TrustedConfirmationRequired
+        }
+        x if x == raw_tag_value(Tag::UnlockedDeviceRequired) => Tag::UnlockedDeviceRequired,
+        x if x == raw_tag_value(Tag::ApplicationId) => Tag::ApplicationData,
+        x if x == raw_tag_value(Tag::CreationDatetime) => Tag::CreationDatetime,
+        x if x == raw_tag_value(Tag::Origin) => Tag::Origin,
+        x if x == raw_tag_value(Tag::RootOfTrust) => Tag::RootOfTrust,
+        x if x == raw_tag_value(Tag::OsVersion) => Tag::OsVersion,
+        x if x == raw_tag_value(Tag::OsPatchlevel) => Tag::OsPatchlevel,
+        x if x == raw_tag_value(Tag::AttestationChallenge) => Tag::AttestationChallenge,
+        x if x == raw_tag_value(Tag::AttestationApplicationId) => Tag::AttestationApplicationId,
+        x if x == raw_tag_value(Tag::AttestationIdBrand) => Tag::AttestationIdBrand,
+        x if x == raw_tag_value(Tag::AttestationIdDevice) => Tag::AttestationIdDevice,
+        x if x == raw_tag_value(Tag::AttestationIdProduct) => Tag::AttestationIdProduct,
+        x if x == raw_tag_value(Tag::AttestationIdSerial) => Tag::AttestationIdSerial,
+        x if x == raw_tag_value(Tag::AttestationIdImei) => Tag::AttestationIdImei,
+        x if x == raw_tag_value(Tag::AttestationIdMeid) => Tag::AttestationIdMeid,
+        x if x == raw_tag_value(Tag::AttestationIdManufacturer) => Tag::AttestationIdManufacturer,
+        x if x == raw_tag_value(Tag::AttestationIdModel) => Tag::AttestationIdModel,
+        x if x == raw_tag_value(Tag::VendorPatchlevel) => Tag::VendorPatchlevel,
+        x if x == raw_tag_value(Tag::BootPatchlevel) => Tag::BootPatchlevel,
+        x if x == raw_tag_value(Tag::DeviceUniqueAttestation) => Tag::DeviceUniqueAttestation,
+        x if x == raw_tag_value(Tag::StorageKey) => Tag::StorageKey,
+        x if x == raw_tag_value(Tag::Nonce) => Tag::Nonce,
+        x if x == raw_tag_value(Tag::MacLength) => Tag::MacLength,
+        x if x == raw_tag_value(Tag::ResetSinceIdRotation) => Tag::ResetSinceIdRotation,
+        x if x == raw_tag_value(Tag::CertificateSerial) => Tag::CertificateSerial,
+        x if x == raw_tag_value(Tag::CertificateSubject) => Tag::CertificateSubject,
+        x if x == raw_tag_value(Tag::CertificateNotBefore) => Tag::CertificateNotBefore,
+        x if x == raw_tag_value(Tag::CertificateNotAfter) => Tag::CertificateNotAfter,
+        x if x == raw_tag_value(Tag::MaxBootLevel) => Tag::MaxBootLevel,
+        _ => Tag::Invalid,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
@@ -1080,22 +1148,3 @@ pub enum TagType {
     UlongRep = -1610612736,
 }
 try_from_n!(TagType);
-
-/// Build the HMAC input for a [`HardwareAuthToken`]
-pub fn hardware_auth_token_mac_input(token: &HardwareAuthToken) -> Vec<u8> {
-    let mut result = Vec::with_capacity(
-        size_of::<u8>() + // version=0 (BE)
-        size_of::<i64>() + // challenge (Host)
-        size_of::<i64>() + // user_id (Host)
-        size_of::<i64>() + // authenticator_id (Host)
-        size_of::<i32>() + // authenticator_type (BE)
-        size_of::<i64>(), // timestamp (BE)
-    );
-    result.extend_from_slice(&0u8.to_be_bytes()[..]);
-    result.extend_from_slice(&token.challenge.to_ne_bytes()[..]);
-    result.extend_from_slice(&token.user_id.to_ne_bytes()[..]);
-    result.extend_from_slice(&token.authenticator_id.to_ne_bytes()[..]);
-    result.extend_from_slice(&(token.authenticator_type as i32).to_be_bytes()[..]);
-    result.extend_from_slice(&token.timestamp.milliseconds.to_be_bytes()[..]);
-    result
-}
