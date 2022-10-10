@@ -3,7 +3,6 @@ use crate::{
     binder,
     hal::keymint::{ErrorCode::ErrorCode, IKeyMintDevice::IKeyMintDevice},
 };
-use kmr_common::hex_decode;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -84,4 +83,38 @@ fn test_method_err_roundtrip() {
     let status = result.unwrap_err();
     assert_eq!(status.exception_code(), binder::ExceptionCode::SERVICE_SPECIFIC);
     assert_eq!(status.service_specific_error(), ErrorCode::UNSUPPORTED_PURPOSE.0);
+}
+
+/// Convert a hex string to data.
+// TODO: replace with hex::decode() if/when this is imported into Android
+pub fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
+    let mut result = Vec::new();
+    let mut pending = 0u8;
+    for (idx, c) in hex.chars().enumerate() {
+        let nibble: u8 = match c {
+            '0' => 0,
+            '1' => 1,
+            '2' => 2,
+            '3' => 3,
+            '4' => 4,
+            '5' => 5,
+            '6' => 6,
+            '7' => 7,
+            '8' => 8,
+            '9' => 9,
+            'a' | 'A' => 0xa,
+            'b' | 'B' => 0xb,
+            'c' | 'C' => 0xc,
+            'd' | 'D' => 0xd,
+            'e' | 'E' => 0xe,
+            'f' | 'F' => 0xf,
+            _ => return Err(format!("char {} '{}' not a hex digit", idx, c)),
+        };
+        if idx % 2 == 0 {
+            pending = nibble << 4;
+        } else {
+            result.push(pending | nibble);
+        }
+    }
+    Ok(result)
 }

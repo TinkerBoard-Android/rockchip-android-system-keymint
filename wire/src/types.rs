@@ -1,36 +1,34 @@
-//! Types and macros for communication between HAL and TA
-
-use crate::cbor_type_error;
-use crate::{
-    cbor,
-    wire::{
-        keymint::{
-            AttestationKey, DeviceInfo, ErrorCode, HardwareAuthToken, KeyCharacteristics,
-            KeyCreationResult, KeyFormat, KeyMintHardwareInfo, KeyParam, KeyPurpose,
-            MacedPublicKey, ProtectedData, RpcHardwareInfo,
-        },
-        secureclock::TimeStampToken,
-        sharedsecret::SharedSecretParameters,
-    },
-    AsCborValue, CborError,
+use crate::keymint::{
+    AttestationKey, DeviceInfo, ErrorCode, HardwareAuthToken, KeyCharacteristics,
+    KeyCreationResult, KeyFormat, KeyMintHardwareInfo, KeyParam, KeyPurpose, MacedPublicKey,
+    ProtectedData, RpcHardwareInfo,
 };
+use crate::secureclock::TimeStampToken;
+use crate::sharedsecret::SharedSecretParameters;
+use crate::{cbor, cbor_type_error, vec_try, AsCborValue, CborError};
 use alloc::{
     format,
     string::{String, ToString},
-    vec,
     vec::Vec,
 };
 use enumn::N;
 use kmr_derive::AsCborValue;
 
-pub mod keymint;
-pub mod secureclock;
-pub mod sharedsecret;
+/// Key size in bits.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue)]
+pub struct KeySizeInBits(pub u32);
+
+/// RSA exponent.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue)]
+pub struct RsaExponent(pub u64);
 
 /// Maximum supported size for CBOR-serialized messages.
 pub const MAX_SIZE: usize = 4096;
 
 /// Marker type indicating failure to convert into an `enum` variant.
+#[derive(Debug)]
 pub struct ValueNotRecognized;
 
 /// Trait that associates an enum value of the specified type with a type.
@@ -358,7 +356,7 @@ pub struct PerformOpResponse {
     pub rsp: Option<PerformOpRsp>,
 }
 
-/// Declare a collection of related enums for an code and a pair of types.
+/// Declare a collection of related enums for a code and a pair of types.
 ///
 /// An invocation like:
 /// ```ignore
@@ -486,10 +484,12 @@ macro_rules! declare_req_rsp_enums {
             }
             fn to_cbor_value(self) -> Result<cbor::value::Value, CborError> {
                 Ok(cbor::value::Value::Array(match self {
-                    $( Self::$cname(val) => vec![
-                        $cenum::$cname.to_cbor_value()?,
-                        val.to_cbor_value()?
-                    ], )*
+                    $( Self::$cname(val) => {
+                        vec_try![
+                            $cenum::$cname.to_cbor_value()?,
+                            val.to_cbor_value()?
+                        ]?
+                    }, )*
                 }))
             }
 
@@ -522,10 +522,12 @@ macro_rules! declare_req_rsp_enums {
             }
             fn to_cbor_value(self) -> Result<cbor::value::Value, CborError> {
                 Ok(cbor::value::Value::Array(match self {
-                    $( Self::$cname(val) => vec![
-                        $cenum::$cname.to_cbor_value()?,
-                        val.to_cbor_value()?
-                    ], )*
+                    $( Self::$cname(val) => {
+                        vec_try![
+                            $cenum::$cname.to_cbor_value()?,
+                            val.to_cbor_value()?
+                        ]?
+                    }, )*
                 }))
             }
 

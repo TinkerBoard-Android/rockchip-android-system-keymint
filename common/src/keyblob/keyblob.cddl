@@ -1,6 +1,6 @@
 ; encrypted_key_material is AES-GCM encrypted with:
 ; - key derived as described below
-; - plaintext is the CBOR-serialization of `PlaintextKeyMaterial`
+; - plaintext is the CBOR-serialization of `KeyMaterial`
 ; - nonce value is fixed, all zeroes
 ; - no additional data
 ;
@@ -33,17 +33,19 @@ KeyCharacteristics = [
     authorizations: [* KeyParam],
 ]
 Cose_Encrypt0 = [ protected: bstr, unprotected: { * (int / tstr) => any }, ciphertext: bstr / nil ]
-PlaintextKeyMaterial = &(
-  [32, bstr], ; Algorithm_Aes
-  [33, bstr], ; Algorithm_TripleDes
-  [128, bstr], ; Algorithm_Hmac
-  ; RSA key is in the form of an ASN.1 DER encoding of an PKCS#1 `RSAPrivateKey` structure,
-  ; as specified by RFC 3447 sections A.1.2 and 3.2.
-  [1, bstr], ; Algorithm_Rsa
-  ; EC key for a NIST curve is in the form of an ASN.1 DER encoding of a `ECPrivateKey`
-  ; structure, as specified by RFC 5915 section 3.
-  ; EC key for curve 25519 is the raw key bytes.
-  [3, [EcCurve, CurveType, bstr]], ; Algorithm_Ec
+KeyMaterial = &(
+  ; For each variant the `bool` second entry indicates whether the bstr for the key material
+  ; is opaque (true), or explicit (false).
+  [32, bool, bstr], ; Algorithm_Aes
+  [33, bool, bstr], ; Algorithm_TripleDes
+  [128, bool, bstr], ; Algorithm_Hmac
+  ; An explicit RSA key is in the form of an ASN.1 DER encoding of a PKCS#1 `RSAPrivateKey`
+  ; structure, as specified by RFC 3447 sections A.1.2 and 3.2.
+  [1, bool, bstr], ; Algorithm_Rsa
+  ; An explicit EC key for a NIST curve is in the form of an ASN.1 DER encoding of a
+  ; `ECPrivateKey` structure, as specified by RFC 5915 section 3.
+  ; An explicit EC key for curve 25519 is the raw key bytes.
+  [3, bool, [EcCurve, CurveType, bstr]], ; Algorithm_Ec
 )
 SecureDeletionSlot = int
 SecureDeletionData = [
@@ -79,7 +81,7 @@ KeyParam = &(
     [805306371, KeySizeInBits], ; Tag_KeySize
     [1879048199, bstr], ; Tag_CallerNonce
     [805306376, int], ; Tag_MinMacLength
-    [1342177480, Exponent], ; Tag_RsaPublicExponent
+    [1342177480, RsaExponent], ; Tag_RsaPublicExponent
     [1879048394, true], ; Tag_IncludeUniqueId
     [536871115, Digest], ; Tag_RsaOaepMgfDigest
     [1879048494, true], ; Tag_BootloaderOnly
@@ -261,5 +263,5 @@ PaddingMode = &(
 )
 DateTime = int
 KeySizeInBits = int
-Exponent = int
+RsaExponent = int
 

@@ -1,57 +1,6 @@
-use crate::{crypto, km_err, Error};
-
-use super::{SecureDeletionData, SecureDeletionSecretManager, SecureDeletionSlot, SlotHolder};
-
-const SLOT_COUNT: usize = 16;
-
-#[derive(Default)]
-struct TestSlotManager {
-    slots: [Option<SecureDeletionData>; SLOT_COUNT],
-}
-
-impl SecureDeletionSecretManager for TestSlotManager {
-    fn new_secret(
-        &mut self,
-        rng: &mut dyn crypto::Rng,
-    ) -> Result<(SecureDeletionSlot, SecureDeletionData), Error> {
-        for idx in 0..SLOT_COUNT {
-            if self.slots[idx].is_none() {
-                let mut sdd = SecureDeletionData {
-                    factory_reset_secret: [0xaa; 32],
-                    secure_deletion_secret: [0; 16],
-                };
-                rng.fill_bytes(&mut sdd.secure_deletion_secret[..]);
-                self.slots[idx] = Some(sdd.clone());
-                return Ok((SecureDeletionSlot(idx as u32), sdd));
-            }
-        }
-        Err(km_err!(RollbackResistanceUnavailable, "full"))
-    }
-
-    fn get_secret(&self, slot: SecureDeletionSlot) -> Result<SecureDeletionData, Error> {
-        let idx = slot.0 as usize;
-        if !(0..SLOT_COUNT).contains(&idx) {
-            return Err(km_err!(InvalidArgument, "slot idx out of bounds"));
-        }
-        match &self.slots[idx] {
-            Some(data) => Ok(data.clone()),
-            None => Err(km_err!(InvalidArgument, "slot idx empty")),
-        }
-    }
-
-    fn delete_secret(&mut self, slot: SecureDeletionSlot) -> Result<(), Error> {
-        match self.slots[slot.0 as usize].take() {
-            Some(_data) => Ok(()),
-            None => Err(km_err!(InvalidArgument, "slot idx empty")),
-        }
-    }
-
-    fn delete_all(&mut self) {
-        for idx in 0..SLOT_COUNT {
-            self.slots[idx] = None;
-        }
-    }
-}
+use super::{
+    sdd_mem::InMemorySlotManager, SecureDeletionSecretManager, SecureDeletionSlot, SlotHolder,
+};
 
 #[derive(Default)]
 struct FakeRng(u8);
@@ -67,8 +16,8 @@ impl crate::crypto::Rng for FakeRng {
 }
 
 #[test]
-fn test_slot_holder() {
-    let mut sdd_mgr = TestSlotManager::default();
+fn test_sdd_slot_holder() {
+    let mut sdd_mgr = InMemorySlotManager::<10>::default();
     let mut rng = FakeRng::default();
     let (slot_holder0, sdd0) = SlotHolder::new(&mut sdd_mgr, &mut rng).unwrap();
     let slot0 = slot_holder0.consume();
@@ -94,4 +43,29 @@ fn test_slot_holder() {
     let slot2 = slot_holder2.consume();
     assert_eq!(slot2, SecureDeletionSlot(2));
     assert!(sdd_mgr.get_secret(slot2).unwrap() == sdd2b);
+}
+
+#[test]
+fn test_sdd_factory_secret() {
+    let mut sdd_mgr = InMemorySlotManager::<10>::default();
+    let mut rng = FakeRng::default();
+    assert!(sdd_mgr.get_factory_reset_secret().is_err());
+    let secret1 = sdd_mgr.get_or_create_factory_reset_secret(&mut rng).unwrap();
+    let secret2 = sdd_mgr.get_factory_reset_secret().unwrap();
+    assert!(secret1 == secret2);
+    let secret3 = sdd_mgr.get_or_create_factory_reset_secret(&mut rng).unwrap();
+    assert!(secret1 == secret3);
+}
+
+#[test]
+fn test_sdd_exhaustion() {
+    let mut sdd_mgr = InMemorySlotManager::<2>::default();
+    let mut rng = FakeRng::default();
+    let (_slot0, _sdd0) = sdd_mgr.new_secret(&mut rng).unwrap();
+    let (slot1a, sdd1a) = sdd_mgr.new_secret(&mut rng).unwrap();
+    assert!(sdd_mgr.new_secret(&mut rng).is_err());
+    sdd_mgr.delete_secret(slot1a).unwrap();
+    let (slot1b, sdd1b) = sdd_mgr.new_secret(&mut rng).unwrap();
+    assert_eq!(slot1a, slot1b);
+    assert!(sdd1a != sdd1b);
 }

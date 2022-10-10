@@ -1,6 +1,6 @@
 DateTime = int
 KeySizeInBits = int
-Exponent = int
+RsaExponent = int
 Algorithm = &(
     Algorithm_Rsa: 1,
     Algorithm_Ec: 3,
@@ -315,7 +315,7 @@ KeyParam = &(
     [805306371, KeySizeInBits], ; Tag_KeySize
     [1879048199, bstr], ; Tag_CallerNonce
     [805306376, int], ; Tag_MinMacLength
-    [1342177480, Exponent], ; Tag_RsaPublicExponent
+    [1342177480, RsaExponent], ; Tag_RsaPublicExponent
     [1879048394, true], ; Tag_IncludeUniqueId
     [536871115, Digest], ; Tag_RsaOaepMgfDigest
     [1879048494, true], ; Tag_BootloaderOnly

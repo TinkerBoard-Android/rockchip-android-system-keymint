@@ -10,10 +10,8 @@
 #![allow(non_snake_case)]
 
 use core::{convert::TryInto, fmt::Debug};
-use kmr_common::{
-    cbor,
-    wire::{keymint::ErrorCode, Code, KeyMintOperation},
-    AsCborValue, CborError,
+use kmr_wire::{
+    cbor, cbor_type_error, keymint::ErrorCode, AsCborValue, CborError, Code, KeyMintOperation,
 };
 use log::{error, info};
 use std::{
@@ -139,12 +137,12 @@ where
         )
     })?;
 
-    if req_data.len() > kmr_common::wire::MAX_SIZE {
+    if req_data.len() > kmr_wire::MAX_SIZE {
         error!(
             "HAL operation {:?} encodes bigger {} than max size {}",
             <R>::CODE,
             req_data.len(),
-            kmr_common::wire::MAX_SIZE
+            kmr_wire::MAX_SIZE
         );
         return Err(binder::Status::new_service_specific_error(
             ErrorCode::InvalidInputLength as i32,
@@ -156,12 +154,12 @@ where
     let rsp_data = channel.execute(&req_data)?;
 
     // Convert the raw response data to an array of [error code, opt_response].
-    let rsp_value = kmr_common::read_to_value(&rsp_data).map_err(failed_cbor)?;
+    let rsp_value = kmr_wire::read_to_value(&rsp_data).map_err(failed_cbor)?;
     let mut rsp_array = match rsp_value {
         cbor::value::Value::Array(a) if a.len() == 2 => a,
         _ => {
             error!("HAL: failed to parse response data 2-array!");
-            return kmr_common::cbor_type_error(&rsp_value, "arr of len 2").map_err(failed_cbor);
+            return cbor_type_error(&rsp_value, "arr of len 2").map_err(failed_cbor);
         }
     };
     let opt_response = rsp_array.remove(1);
@@ -177,7 +175,7 @@ where
         cbor::value::Value::Array(mut a) if a.len() == 1 => a.remove(0),
         _ => {
             error!("HAL: failed to parse response data structure!");
-            return kmr_common::cbor_type_error(&opt_response, "arr of len 1").map_err(failed_cbor);
+            return cbor_type_error(&opt_response, "arr of len 1").map_err(failed_cbor);
         }
     };
 
@@ -188,7 +186,7 @@ where
         cbor::value::Value::Array(a) if a.len() == 2 => a,
         _ => {
             error!("HAL: failed to parse inner response data structure!");
-            return kmr_common::cbor_type_error(&rsp, "arr of len 2").map_err(failed_cbor);
+            return cbor_type_error(&rsp, "arr of len 2").map_err(failed_cbor);
         }
     };
     let inner_rsp = inner_rsp_array.remove(1);
@@ -228,35 +226,35 @@ pub fn send_hal_info<T: SerializedChannel>(channel: &mut T) -> binder::Result<()
         )
     })?;
     info!("HAL->TA: environment info is {:?}", req);
-    let _rsp: kmr_common::wire::SetHalInfoResponse = channel_execute(channel, req)?;
+    let _rsp: kmr_wire::SetHalInfoResponse = channel_execute(channel, req)?;
     Ok(())
 }
 
 /// Let the TA know information about the boot environment.
 pub fn send_boot_info<T: SerializedChannel>(
     channel: &mut T,
-    req: kmr_common::wire::SetBootInfoRequest,
+    req: kmr_wire::SetBootInfoRequest,
 ) -> binder::Result<()> {
     info!("boot->TA: boot info is {:?}", req);
-    let _rsp: kmr_common::wire::SetBootInfoResponse = channel_execute(channel, req)?;
+    let _rsp: kmr_wire::SetBootInfoResponse = channel_execute(channel, req)?;
     Ok(())
 }
 
 /// Provision the TA with attestation ID information.
 pub fn send_attest_ids<T: SerializedChannel>(
     channel: &mut T,
-    ids: kmr_common::wire::AttestationIdInfo,
+    ids: kmr_wire::AttestationIdInfo,
 ) -> binder::Result<()> {
-    let req = kmr_common::wire::SetAttestationIdsRequest { ids };
+    let req = kmr_wire::SetAttestationIdsRequest { ids };
     info!("provision->attestation IDs are {:?}", req);
-    let _rsp: kmr_common::wire::SetAttestationIdsResponse = channel_execute(channel, req)?;
+    let _rsp: kmr_wire::SetAttestationIdsResponse = channel_execute(channel, req)?;
     Ok(())
 }
 
 /// Let the TA know that early boot has ended
 pub fn early_boot_ended<T: SerializedChannel>(channel: &mut T) -> binder::Result<()> {
     info!("boot->TA: early boot ended");
-    let req = kmr_common::wire::EarlyBootEndedRequest {};
-    let _rsp: kmr_common::wire::EarlyBootEndedResponse = channel_execute(channel, req)?;
+    let req = kmr_wire::EarlyBootEndedRequest {};
+    let _rsp: kmr_wire::EarlyBootEndedResponse = channel_execute(channel, req)?;
     Ok(())
 }

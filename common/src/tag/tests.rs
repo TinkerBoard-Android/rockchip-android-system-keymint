@@ -1,6 +1,7 @@
 use super::*;
-use crate::{crypto::KeySizeInBits, expect_err, hex_decode, hex_encode, wire::keymint::KeyParam};
+use crate::{expect_err, hex_decode, hex_encode};
 use alloc::vec;
+use kmr_wire::{keymint::KeyParam, KeySizeInBits};
 
 #[test]
 fn test_characteristics_invalid() {
@@ -38,7 +39,7 @@ fn test_legacy_serialization() {
     for (hex_data, want_params) in tests {
         let want_data = hex_decode(hex_data).unwrap();
 
-        let got_data = legacy::serialize(&want_params);
+        let got_data = legacy::serialize(&want_params).unwrap();
         assert_eq!(hex_encode(&got_data), hex_data);
 
         let mut data = &want_data[..];

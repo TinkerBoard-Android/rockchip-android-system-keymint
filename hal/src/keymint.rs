@@ -6,7 +6,7 @@ use crate::hal::{
     secureclock::TimeStampToken::TimeStampToken, Innto, TryInnto,
 };
 use crate::{ChannelHalService, SerializedChannel};
-use kmr_common::{wire::keymint::KeyParam, wire::*, AsCborValue};
+use kmr_wire::{keymint::KeyParam, AsCborValue, *};
 use std::ffi::CString;
 use std::{
     ops::DerefMut,

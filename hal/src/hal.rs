@@ -8,7 +8,7 @@
 //! - The auto-generated types are not idiomatic Rust, and have reduced type safety.
 //!
 //! This module includes code to convert between HAL types (re-used under `kmr_hal::hal`) and
-//! internal types (under `kmr_common::wire`), via the [`Fromm`] / [`TryFromm`], [`Innto`] and
+//! internal types (under `kmr_wire`), via the [`Fromm`] / [`TryFromm`], [`Innto`] and
 //! [`TryInnto`] traits (which are deliberately misspelled to avoid a clash with standard
 //! traits -- see below).
 //!
@@ -16,16 +16,14 @@
 //! - Going from HAL=>wire is often a fallible conversion, as there may be "enum" values
 //!   that are not in range.
 //!
-//! This module (and `kmr_common::wire`) must be kept in sync with the Android KeyMint HAL
-//! definition.
+//! This module (and `kmr_wire`) must be kept in sync with the Android KeyMint HAL definition.
 
 #![allow(non_snake_case)]
 
 use crate::binder;
 use keymint::{KeyParameterValue::KeyParameterValue, Tag::Tag, TagType::TagType};
-use kmr_common::{
-    crypto::rsa, crypto::KeySizeInBits, wire, wire::keymint::DateTime, wire::keymint::KeyParam,
-};
+use kmr_wire as wire;
+use kmr_wire::{keymint::DateTime, keymint::KeyParam, KeySizeInBits, RsaExponent};
 use log::{error, warn};
 use std::convert::TryFrom;
 use std::ffi::CString;
@@ -39,7 +37,7 @@ mod tests;
 
 /// Emit a failure for a failed type conversion.
 #[inline]
-pub fn failed_conversion(_err: wire::ValueNotRecognized) -> binder::Status {
+pub fn failed_conversion(_err: kmr_wire::ValueNotRecognized) -> binder::Status {
     binder::Status::new_service_specific_error(
         keymint::ErrorCode::ErrorCode::INVALID_ARGUMENT.0,
         Some(&CString::new("conversion from HAL type to internal type failed").unwrap()),
@@ -63,10 +61,10 @@ pub fn tag_type(tag: Tag) -> TagType {
     }
 }
 
-// Neither the `kmr_common::wire` types nor the `hal` types are local to this crate, which means
-// that Rust's orphan rule means we cannot implement the standard conversion traits.  So instead
-// define our own equivalent conversion traits that are local, and for which we're allowed to
-// provide implementations.  Give them an odd name to avoid confusion with the standard traits.
+// Neither the `kmr_wire` types nor the `hal` types are local to this crate, which means that Rust's
+// orphan rule means we cannot implement the standard conversion traits.  So instead define our own
+// equivalent conversion traits that are local, and for which we're allowed to provide
+// implementations.  Give them an odd name to avoid confusion with the standard traits.
 
 /// Local equivalent of `From` trait, with a different name to avoid clashes.
 pub trait Fromm<T>: Sized {
@@ -115,9 +113,9 @@ where
     }
 }
 
-// Conversions from `kmr_common::wire` types into the equivalent types in the auto-generated HAL
-// code. These conversions are infallible, because the range of the `wire` types is strictly
-// contained within the HAL types.
+// Conversions from `kmr_wire` types into the equivalent types in the auto-generated HAL code. These
+// conversions are infallible, because the range of the `wire` types is strictly contained within
+// the HAL types.
 
 impl Fromm<wire::sharedsecret::SharedSecretParameters>
     for sharedsecret::SharedSecretParameters::SharedSecretParameters
@@ -356,9 +354,9 @@ impl Fromm<wire::keymint::KeyParam> for keymint::KeyParameter::KeyParameter {
     }
 }
 
-// Conversions from auto-generated HAL types into the equivalent types from `kmr_common::wire`.
-// These conversions are generally fallible, because the "enum" types generated for the HAL are
-// actually `i32` values, which may contain invalid values.
+// Conversions from auto-generated HAL types into the equivalent types from `kmr_wire`.  These
+// conversions are generally fallible, because the "enum" types generated for the HAL are actually
+// `i32` values, which may contain invalid values.
 
 impl Fromm<secureclock::TimeStampToken::TimeStampToken> for wire::secureclock::TimeStampToken {
     fn fromm(val: secureclock::TimeStampToken::TimeStampToken) -> Self {
@@ -523,9 +521,9 @@ impl TryFromm<&keymint::KeyParameter::KeyParameter> for Option<KeyParam> {
             }
 
             // `u64`-holding variants.
-            keymint::Tag::Tag::RSA_PUBLIC_EXPONENT => Some(KeyParam::RsaPublicExponent(
-                rsa::Exponent(value_of!(val, LongInteger)? as u64),
-            )),
+            keymint::Tag::Tag::RSA_PUBLIC_EXPONENT => {
+                Some(KeyParam::RsaPublicExponent(RsaExponent(value_of!(val, LongInteger)? as u64)))
+            }
             keymint::Tag::Tag::USER_SECURE_ID => {
                 Some(KeyParam::UserSecureId(value_of!(val, LongInteger)? as u64))
             }

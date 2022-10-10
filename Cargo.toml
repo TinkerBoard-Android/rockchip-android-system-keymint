@@ -2,8 +2,10 @@
 members = [
   "common",
   "derive",
+  "wire",
 ]
 
 [patch.crates-io]
 kmr-derive = { path = "derive" }
 kmr-common = { path = "common" }
+kmr-wire = { path = "wire" }
