@@ -1,25 +1,24 @@
 //! Functionality related to RSA.
 
-use crate::{
-    km_err, tag,
-    wire::keymint::{Digest, KeyParam, PaddingMode},
-    AsCborValue, CborError, Error,
-};
-use alloc::{
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
-use kmr_derive::AsCborValue;
+use crate::{km_err, tag, Error};
+use alloc::vec::Vec;
+use der::{Decode, Encode};
+use kmr_wire::keymint::{Digest, KeyParam, PaddingMode};
+use pkcs1::RsaPrivateKey;
+use spki::{AlgorithmIdentifier, SubjectPublicKeyInfo};
+use zeroize::ZeroizeOnDrop;
 
 /// Overhead for PKCS#1 v1.5 signature padding of undigested messages.  Digested messages have
 /// additional overhead, for the digest algorithmIdentifier required by PKCS#1.
 pub const PKCS1_UNDIGESTED_SIGNATURE_PADDING_OVERHEAD: usize = 11;
 
-/// RSA exponent.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue)]
-pub struct Exponent(pub u64);
+/// OID value for PKCS#1-encoded RSA keys held in PKCS#8 and X.509; see RFC 3447 A.1.
+pub const X509_OID: pkcs8::ObjectIdentifier =
+    pkcs8::ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1");
+
+/// OID value for PKCS#1 signature with SHA-256 and RSA, see RFC 4055 s5.
+pub const SHA256_PKCS1_SIGNATURE_OID: pkcs8::ObjectIdentifier =
+    pkcs8::ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 
 /// An RSA key, in the form of an ASN.1 DER encoding of an PKCS#1 `RSAPrivateKey` structure,
 /// as specified by RFC 3447 sections A.1.2 and 3.2:
@@ -46,11 +45,11 @@ pub struct Exponent(pub u64);
 ///     coefficient       INTEGER   -- ti
 /// }
 /// ```
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct Key(pub Vec<u8>);
 
 impl Key {
-    /// Return the public key information as an ASN.1 DER encoded `SubjectPublicKeyInfo`, as
+    /// Return the public key information as an ASN.1 DER encodable `SubjectPublicKeyInfo`, as
     /// described in RFC 5280 section 4.1.
     ///
     /// ```asn1
@@ -73,9 +72,30 @@ impl Key {
     ///        modulus            INTEGER,    -- n
     ///        publicExponent     INTEGER  }  -- e
     ///     ```
-    pub fn subject_public_key_info(&self) -> Vec<u8> {
-        // TODO: implement
-        vec![]
+    pub fn subject_public_key_info<'a>(
+        &'a self,
+        buf: &'a mut Vec<u8>,
+    ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
+        let rsa_pvt_key = RsaPrivateKey::from_der(self.0.as_slice())?;
+        let rsa_pub_key = rsa_pvt_key.public_key();
+        rsa_pub_key.encode_to_vec(buf)?;
+        Ok(SubjectPublicKeyInfo {
+            algorithm: AlgorithmIdentifier { oid: X509_OID, parameters: Some(der::AnyRef::NULL) },
+            subject_public_key: buf,
+        })
+    }
+
+    /// Size of the key in bytes.
+    pub fn size(&self) -> usize {
+        let rsa_pvt_key = match RsaPrivateKey::from_der(self.0.as_slice()) {
+            Ok(k) => k,
+            Err(e) => {
+                log::error!("failed to determine RSA key length: {:?}", e);
+                return 0;
+            }
+        };
+        let len = u32::from(rsa_pvt_key.modulus.len());
+        len as usize
     }
 }
 

@@ -1,10 +1,10 @@
 //! Utility to emit the CDDL for messages passed between HAL and TA.
 
 use kmr_common::crypto;
-use kmr_common::wire::*;
-use kmr_common::wire::{keymint::*, secureclock::*, sharedsecret::*};
+use kmr_wire::*;
+use kmr_wire::{keymint::*, secureclock::*, sharedsecret::*};
 
-fn show_schema<T: kmr_common::AsCborValue>() {
+fn show_schema<T: kmr_wire::AsCborValue>() {
     if let (Some(n), Some(s)) = (<T>::cddl_typename(), <T>::cddl_schema()) {
         println!("{} = {}", n, s);
     }
@@ -15,8 +15,8 @@ fn main() {
 
     // newtype wrappers
     show_schema::<DateTime>();
-    show_schema::<crypto::KeySizeInBits>();
-    show_schema::<crypto::rsa::Exponent>();
+    show_schema::<kmr_wire::KeySizeInBits>();
+    show_schema::<kmr_wire::RsaExponent>();
 
     // enums
     show_schema::<Algorithm>();

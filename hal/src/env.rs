@@ -1,6 +1,6 @@
 //! Retrieve and populate information about userspace.
 
-use kmr_common::wire::SetHalInfoRequest;
+use kmr_wire::SetHalInfoRequest;
 use regex::Regex;
 
 // The OS version property is of form "12" or "12.1" or "12.1.3".
@@ -112,7 +112,7 @@ pub fn populate_hal_info() -> Result<SetHalInfoRequest, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kmr_common::wire::SetHalInfoRequest;
+    use kmr_wire::SetHalInfoRequest;
     #[test]
     fn test_hal_info() {
         let tests = vec![

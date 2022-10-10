@@ -1,5 +1,5 @@
-use kmr_common::{cbor_type_error, AsCborValue, CborError};
 use kmr_derive::AsCborValue;
+use kmr_wire::{cbor_type_error, AsCborValue, CborError};
 
 #[derive(Clone, Debug, PartialEq, Eq, AsCborValue)]
 struct NamedFields {

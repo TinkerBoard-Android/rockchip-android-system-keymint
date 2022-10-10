@@ -1,21 +1,22 @@
 //! Key blob manipulation functionality.
 
-use crate::{
-    cbor, cbor_type_error, contains_tag_value, crypto, km_err,
-    wire::keymint::{KeyCharacteristics, KeyParam, KeyPurpose, SecurityLevel, VerifiedBootState},
-    AsCborValue, CborError, Error,
-};
+use crate::{contains_tag_value, crypto, km_err, try_to_vec, vec_try, Error, FallibleAllocExt};
 use alloc::{
     format,
     string::{String, ToString},
-    vec,
     vec::Vec,
 };
-use coset::TaggedCborSerializable;
 use kmr_derive::AsCborValue;
+use kmr_wire::keymint::{
+    KeyCharacteristics, KeyParam, KeyPurpose, SecurityLevel, VerifiedBootState,
+};
+use kmr_wire::{cbor, cbor_type_error, AsCborValue, CborError};
 use log::error;
+use zeroize::ZeroizeOnDrop;
 
 pub mod legacy;
+pub mod sdd_mem;
+
 #[cfg(test)]
 mod tests;
 
@@ -46,6 +47,11 @@ impl EncryptedKeyBlob {
         Self::from_slice(data)
             .map_err(|e| km_err!(InvalidKeyBlob, "failed to parse keyblob: {:?}", e))
     }
+    pub fn secure_deletion_slot(&self) -> Option<SecureDeletionSlot> {
+        match self {
+            EncryptedKeyBlob::V1(blob) => blob.secure_deletion_slot,
+        }
+    }
 }
 
 impl AsCborValue for EncryptedKeyBlob {
@@ -62,10 +68,10 @@ impl AsCborValue for EncryptedKeyBlob {
     }
     fn to_cbor_value(self) -> Result<cbor::value::Value, CborError> {
         Ok(match self {
-            EncryptedKeyBlob::V1(inner) => cbor::value::Value::Array(vec![
-                Version::V1.to_cbor_value()?,
-                inner.to_cbor_value()?,
-            ]),
+            EncryptedKeyBlob::V1(inner) => cbor::value::Value::Array(
+                vec_try![Version::V1.to_cbor_value()?, inner.to_cbor_value()?]
+                    .map_err(|_e| CborError::AllocationFailed)?,
+            ),
         })
     }
     fn cddl_typename() -> Option<String> {
@@ -91,7 +97,7 @@ pub struct EncryptedKeyBlobV1 {
     pub key_derivation_input: [u8; 32],
     /// Key material encrypted with AES-GCM with:
     ///  - key produced by [`derive_kek`]
-    ///  - plaintext is the CBOR-serialization of [`crypto::PlaintextKeyMaterial`]
+    ///  - plaintext is the CBOR-serialization of [`crypto::KeyMaterial`]
     ///  - nonce is all zeroes
     ///  - no additional data.
     pub encrypted_key_material: coset::CoseEncrypt0,
@@ -100,45 +106,36 @@ pub struct EncryptedKeyBlobV1 {
     pub secure_deletion_slot: Option<SecureDeletionSlot>,
 }
 
-// Implement the local `AsCborValue` trait for `coset::CoseEncrypt0` ensuring/requiring
-// use of the relevant CBOR tag.
-impl AsCborValue for coset::CoseEncrypt0 {
-    fn from_cbor_value(value: cbor::value::Value) -> Result<Self, CborError> {
-        match value {
-            cbor::value::Value::Tag(tag, inner_value) if tag == coset::CoseEncrypt0::TAG => {
-                <coset::CoseEncrypt0 as coset::AsCborValue>::from_cbor_value(*inner_value)
-                    .map_err(|e| e.into())
-            }
-            cbor::value::Value::Tag(_, _) => Err(CborError::UnexpectedItem("tag", "tag 16")),
-            _ => cbor_type_error(&value, "tag 16"),
-        }
-    }
-    fn to_cbor_value(self) -> Result<cbor::value::Value, CborError> {
-        Ok(cbor::value::Value::Tag(
-            coset::CoseEncrypt0::TAG,
-            alloc::boxed::Box::new(coset::AsCborValue::to_cbor_value(self)?),
-        ))
-    }
-    fn cddl_schema() -> Option<String> {
-        Some(format!("#6.{}(Cose_Encrypt0)", coset::CoseEncrypt0::TAG))
-    }
-}
-
-/// Secret data that can be mixed into the key derivation inputs for keys that require secure
-/// deletion support; if the secret data is lost, the key is effectively deleted because the
-/// key encryption key for the keyblob cannot be re-derived.
-#[derive(Clone, PartialEq, Eq, AsCborValue)]
+/// Secret data that can be mixed into the key derivation inputs for keys; if the secret data is
+/// lost, the key is effectively deleted because the key encryption key for the keyblob cannot be
+/// re-derived.
+#[derive(Clone, PartialEq, Eq, AsCborValue, ZeroizeOnDrop)]
 pub struct SecureDeletionData {
-    /// Secret value that is wiped on factory reset.
+    /// Secret value that is wiped on factory reset.  This should be populated for all keys, to
+    /// ensure that a factory reset invalidates all keys.
     pub factory_reset_secret: [u8; 32],
-    /// Per-key secret value that is wiped on key deletion.
+    /// Per-key secret value that is wiped on deletion of a specific key.  This is only populated
+    /// for keys with secure deletion support; for other keys this field will be all zeroes.
     pub secure_deletion_secret: [u8; 16],
 }
 
 /// Manager for the mapping between secure deletion slots and the corresponding
 /// [`SecureDeletionData`] instances.
 pub trait SecureDeletionSecretManager {
-    /// Find an empty slot, populate it with a fresh [`SecureDeletionData`] and return the slot.
+    /// Return a [`SecureDeletionData`] that has the `factory_reset_secret` populated but which has
+    /// all zeroes for the `secure_deletion_secret`. If a factory reset secret has not yet been
+    /// created, do so (possibly using `rng`)
+    fn get_or_create_factory_reset_secret(
+        &mut self,
+        rng: &mut dyn crypto::Rng,
+    ) -> Result<SecureDeletionData, Error>;
+
+    /// Return a [`SecureDeletionData`] that has the `factory_reset_secret` populated
+    /// but which has all zeroes for the `secure_deletion_secret`.
+    fn get_factory_reset_secret(&self) -> Result<SecureDeletionData, Error>;
+
+    /// Find an empty slot, populate it with a fresh [`SecureDeletionData`] that includes a per-key
+    /// secret, and return the slot.
     fn new_secret(
         &mut self,
         rng: &mut dyn crypto::Rng,
@@ -150,7 +147,7 @@ pub trait SecureDeletionSecretManager {
     /// Delete the [`SecureDeletionData`] identified by `slot`.
     fn delete_secret(&mut self, slot: SecureDeletionSlot) -> Result<(), Error>;
 
-    /// Delete all secure deletion data.
+    /// Delete all secure deletion data, including the factory reset secret.
     fn delete_all(&mut self);
 }
 
@@ -212,11 +209,11 @@ pub fn derive_kek(
     hidden: Vec<KeyParam>,
     sdd: Option<SecureDeletionData>,
 ) -> Result<crypto::aes::Key, Error> {
-    let mut info = key_derivation_input.to_vec();
-    info.extend_from_slice(&characteristics.into_vec()?);
-    info.extend_from_slice(&hidden.into_vec()?);
+    let mut info = try_to_vec(key_derivation_input)?;
+    info.try_extend_from_slice(&characteristics.into_vec()?)?;
+    info.try_extend_from_slice(&hidden.into_vec()?)?;
     if let Some(sdd) = sdd {
-        info.extend_from_slice(&sdd.into_vec()?);
+        info.try_extend_from_slice(&sdd.into_vec()?)?;
     }
     let data = kdf.hkdf(&[], &root_key.0, &info, 32)?;
     Ok(crypto::aes::Key::Aes256(data.try_into().unwrap(/* safe: len checked */)))
@@ -228,26 +225,32 @@ pub struct PlaintextKeyBlob {
     /// Characteristics associated with the key.
     pub characteristics: Vec<KeyCharacteristics>,
     /// Key Material
-    pub key_material: crypto::PlaintextKeyMaterial,
+    pub key_material: crypto::KeyMaterial,
 }
 
+/// Return the set of key parameters at the provided security level.
 pub fn characteristics_at(
     chars: &[KeyCharacteristics],
     sec_level: SecurityLevel,
 ) -> Result<&[KeyParam], Error> {
+    let mut result: Option<&[KeyParam]> = None;
     for chars in chars {
-        if chars.security_level == sec_level {
-            return Ok(&chars.authorizations);
+        if chars.security_level != sec_level {
+            continue;
+        }
+        if result.is_none() {
+            result = Some(&chars.authorizations);
+        } else {
+            return Err(km_err!(InvalidKeyBlob, "multiple key characteristics at {:?}", sec_level));
         }
     }
-    Err(km_err!(InvalidKeyBlob, "no parameters at security level {:?} found", sec_level))
+    result.ok_or_else(|| {
+        km_err!(InvalidKeyBlob, "no parameters at security level {:?} found", sec_level)
+    })
 }
 
 impl PlaintextKeyBlob {
-    /// Return the set of key parameters at the provided security level. This method assumes that
-    /// the characteristics are well-formed (i.e. do not have duplicate entries for the same
-    /// security level).
-    // TODO: add code to police this when parsing externally-provided keyblobs
+    /// Return the set of key parameters at the provided security level.
     pub fn characteristics_at(&self, sec_level: SecurityLevel) -> Result<&[KeyParam], Error> {
         characteristics_at(&self.characteristics, sec_level)
     }
@@ -283,8 +286,8 @@ pub fn encrypt(
         .any(|param| matches!(param, KeyParam::RollbackResistance | KeyParam::UsageCountLimit(1)));
     let (slot_holder, sdd) = match (requires_sdd, sdd_mgr) {
         (true, Some(sdd_mgr)) => {
-            // Store the reserved slot in a [`SlotHolder`] so that it will definitely
-            // be released if there are any errors encountered below.
+            // Reserve a slot and store it in a [`SlotHolder`] so that it will definitely be
+            // released if there are any errors encountered below.
             let (holder, sdd) = SlotHolder::new(sdd_mgr, rng)?;
             (Some(holder), Some(sdd))
         }
@@ -294,7 +297,15 @@ pub fn encrypt(
                 "no secure secret storage available"
             ))
         }
-        (false, _) => (None, None),
+        (false, Some(sdd_mgr)) => {
+            // Create a secure deletion secret that just has the factory reset secret in it.
+            (None, Some(sdd_mgr.get_or_create_factory_reset_secret(rng)?))
+        }
+        (false, None) => {
+            // No secure storage available, and none explicitly asked for.  However, this keyblob
+            // will survive factory reset.
+            (None, None)
+        }
     };
     let characteristics = plaintext_keyblob.characteristics;
     let mut key_derivation_input = [0u8; 32];
@@ -310,13 +321,13 @@ pub fn encrypt(
             &[],
             move |pt, aad| {
                 let mut op = aes.begin_aead(
-                    kek,
+                    kek.into(),
                     crypto::aes::GcmMode::GcmTag16 { nonce: ZERO_NONCE },
                     crypto::SymmetricOperation::Encrypt,
                 )?;
                 op.update_aad(aad)?;
                 let mut ct = op.update(pt)?;
-                ct.extend_from_slice(&op.finish()?);
+                ct.try_extend_from_slice(&op.finish()?)?;
                 Ok(ct)
             },
         )?
@@ -348,7 +359,11 @@ pub fn decrypt(
                 "keyblob has sdd slot but no secure storage available"
             ))
         }
-        (None, _) => None,
+        (None, Some(sdd_mgr)) => {
+            // Keyblob should be bound to (just) the factory reset secret.
+            Some(sdd_mgr.get_factory_reset_secret()?)
+        }
+        (None, None) => None,
     };
     let characteristics = encrypted_keyblob.characteristics;
     let kek = derive_kek(
@@ -368,18 +383,18 @@ pub fn decrypt(
     );
 
     let mut op = aes.begin_aead(
-        kek,
+        kek.into(),
         crypto::aes::GcmMode::GcmTag16 { nonce: ZERO_NONCE },
         crypto::SymmetricOperation::Decrypt,
     )?;
     op.update_aad(&extended_aad)?;
     let mut pt_data = op.update(&cose_encrypt.ciphertext.unwrap_or_default())?;
-    pt_data.extend_from_slice(
+    pt_data.try_extend_from_slice(
         &op.finish().map_err(|e| km_err!(InvalidKeyBlob, "failed to decrypt keyblob: {:?}", e))?,
-    );
+    )?;
 
     Ok(PlaintextKeyBlob {
         characteristics,
-        key_material: <crypto::PlaintextKeyMaterial>::from_slice(&pt_data)?,
+        key_material: <crypto::KeyMaterial>::from_slice(&pt_data)?,
     })
 }
