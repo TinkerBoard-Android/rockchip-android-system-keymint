@@ -84,6 +84,19 @@ impl From<NistCurve> for EcCurve {
     }
 }
 
+impl TryFrom<EcCurve> for NistCurve {
+    type Error = Error;
+    fn try_from(curve: EcCurve) -> Result<NistCurve, Error> {
+        match curve {
+            EcCurve::P224 => Ok(NistCurve::P224),
+            EcCurve::P256 => Ok(NistCurve::P256),
+            EcCurve::P384 => Ok(NistCurve::P384),
+            EcCurve::P521 => Ok(NistCurve::P521),
+            EcCurve::Curve25519 => Err(km_err!(InvalidArgument, "curve 25519 is not a NIST curve")),
+        }
+    }
+}
+
 /// Elliptic curve private key material.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Key {
@@ -137,6 +150,18 @@ impl Key {
             Key::P224(_) | Key::P256(_) | Key::P384(_) | Key::P521(_) => super::CurveType::Nist,
             Key::Ed25519(_) => super::CurveType::EdDsa,
             Key::X25519(_) => super::CurveType::Xdh,
+        }
+    }
+
+    /// Return the curve.
+    pub fn curve(&self) -> EcCurve {
+        match self {
+            Key::P224(_) => EcCurve::P224,
+            Key::P256(_) => EcCurve::P256,
+            Key::P384(_) => EcCurve::P384,
+            Key::P521(_) => EcCurve::P521,
+            Key::Ed25519(_) => EcCurve::Curve25519,
+            Key::X25519(_) => EcCurve::Curve25519,
         }
     }
 
