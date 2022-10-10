@@ -1,10 +1,7 @@
 //! Static information about tag behaviour.
 
-use crate::{
-    km_err,
-    wire::keymint::{Tag, TagType},
-    Error,
-};
+use crate::{km_err, Error};
+use kmr_wire::keymint::{Tag, TagType};
 
 #[cfg(test)]
 mod tests;
@@ -1090,7 +1087,7 @@ pub fn info(tag: Tag) -> Result<&'static Info, Error> {
 #[inline]
 pub fn multivalued(tag: Tag) -> bool {
     matches!(
-        crate::wire::keymint::tag_type(tag),
+        kmr_wire::keymint::tag_type(tag),
         TagType::EnumRep | TagType::UintRep | TagType::UlongRep
     )
 }

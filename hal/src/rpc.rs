@@ -3,7 +3,7 @@
 use super::{ChannelHalService, SerializedChannel};
 use crate::binder;
 use crate::hal::{keymint, Innto};
-use kmr_common::wire::*;
+use kmr_wire::*;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// `IRemotelyProvisionedComponent` implementation which converts all method invocations to
@@ -19,6 +19,7 @@ impl<T: SerializedChannel + 'static> Device<T> {
     }
 
     /// Create a new instance wrapped in a proxy object.
+    #[cfg(soong)]
     pub fn new_as_binder(
         channel: Arc<Mutex<T>>,
     ) -> binder::Strong<dyn keymint::IRemotelyProvisionedComponent::IRemotelyProvisionedComponent>

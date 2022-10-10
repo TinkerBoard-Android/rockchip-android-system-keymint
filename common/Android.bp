@@ -24,7 +24,14 @@ rust_defaults {
         "libciborium",
         "libciborium_io",
         "libcoset",
+        "libder",
+        "libkmr_wire",
         "liblog_rust",
+        "libpkcs1",
+        "libpkcs8",
+        "libsec1",
+        "libspki",
+        "libzeroize",
     ],
     proc_macros: [
         "libenumn",
@@ -32,18 +39,17 @@ rust_defaults {
     ],
 }
 
-rust_library {
+rust_library_host {
     name: "libkmr_common",
     crate_name: "kmr_common",
     srcs: ["src/lib.rs"],
-    host_supported: true,
     vendor_available: true,
     defaults: [
         "kmr_common_defaults",
     ],
 }
 
-rust_test {
+rust_test_host {
     name: "libkmr_common_test",
     crate_name: "kmr_common_test",
     srcs: ["src/lib.rs"],
@@ -57,5 +63,20 @@ rust_binary_host {
     name: "kmr_cddl_dump",
     crate_name: "kmr_cddl_dump",
     srcs: ["src/bin/cddl-dump.rs"],
-    rustlibs: ["libkmr_common"],
+    rustlibs: [
+        "libkmr_common",
+        "libkmr_wire",
+    ],
 }
+
+// Fuzz target is commented out because it must be built for the device,
+// but some of the dependencies of libkmr_common have only been allowed as
+// non-platform dependencies.
+// TODO: reinstate if host-only fuzzing becomes available, or if the various
+// dependencies become available on the platform
+
+//rust_fuzz {
+//    name: "libkmr_common_fuzz_keyblob",
+//    srcs: ["fuzz/fuzz_targets/keyblob.rs"],
+//    rustlibs: ["libkmr_common"],
+//}

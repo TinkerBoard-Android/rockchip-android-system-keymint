@@ -1,8 +1,12 @@
 //! Utilities for handling legacy KeyMaster/KeyMint key blobs.
 
 use crate::tag::legacy::{consume_u32, consume_u8, consume_vec};
-use crate::{crypto, get_opt_tag_value, km_err, wire::keymint::KeyParam, Error};
-use alloc::{vec, vec::Vec};
+use crate::{
+    crypto, get_opt_tag_value, km_err, try_to_vec, vec_try_with_capacity, Error, FallibleAllocExt,
+};
+use alloc::vec::Vec;
+use core::mem::size_of;
+use kmr_wire::keymint::KeyParam;
 
 #[cfg(test)]
 mod tests;
@@ -41,20 +45,34 @@ pub struct EncryptedKeyBlob {
 
 impl EncryptedKeyBlob {
     /// Serialize an [`EncryptedKeyBlob`].
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut result = vec![self.format as u8];
+    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+        let hw_enforced_data = crate::tag::legacy::serialize(&self.hw_enforced)?;
+        let sw_enforced_data = crate::tag::legacy::serialize(&self.sw_enforced)?;
+        let mut result = vec_try_with_capacity!(
+            size_of::<u8>()
+                + size_of::<u32>()
+                + self.nonce.len()
+                + size_of::<u32>()
+                + self.ciphertext.len()
+                + size_of::<u32>()
+                + self.tag.len()
+                + hw_enforced_data.len()
+                + sw_enforced_data.len()
+                + size_of::<u32>()
+        )?;
+        result.push(self.format as u8);
         result.extend_from_slice(&(self.nonce.len() as u32).to_ne_bytes());
         result.extend_from_slice(&self.nonce);
         result.extend_from_slice(&(self.ciphertext.len() as u32).to_ne_bytes());
         result.extend_from_slice(&self.ciphertext);
         result.extend_from_slice(&(self.tag.len() as u32).to_ne_bytes());
         result.extend_from_slice(&self.tag);
-        result.extend_from_slice(&crate::tag::legacy::serialize(&self.hw_enforced));
-        result.extend_from_slice(&crate::tag::legacy::serialize(&self.sw_enforced));
+        result.extend_from_slice(&hw_enforced_data);
+        result.extend_from_slice(&sw_enforced_data);
         if let Some(slot) = self.key_slot {
             result.extend_from_slice(&(slot as u32).to_ne_bytes());
         }
-        result
+        Ok(result)
     }
 
     /// Parse a serialized [`KeyBlob`].
@@ -104,11 +122,20 @@ impl KeyBlob {
         hmac: &H,
         hidden: &[KeyParam],
     ) -> Result<Vec<u8>, crate::Error> {
-        let mut result = vec![KEY_BLOB_VERSION];
+        let hw_enforced_data = crate::tag::legacy::serialize(&self.hw_enforced)?;
+        let sw_enforced_data = crate::tag::legacy::serialize(&self.sw_enforced)?;
+        let mut result = vec_try_with_capacity!(
+            size_of::<u8>()
+                + size_of::<u32>()
+                + self.key_material.len()
+                + hw_enforced_data.len()
+                + sw_enforced_data.len()
+        )?;
+        result.push(KEY_BLOB_VERSION);
         result.extend_from_slice(&(self.key_material.len() as u32).to_ne_bytes());
         result.extend_from_slice(&self.key_material);
-        result.extend_from_slice(&crate::tag::legacy::serialize(&self.hw_enforced));
-        result.extend_from_slice(&crate::tag::legacy::serialize(&self.sw_enforced));
+        result.extend_from_slice(&hw_enforced_data);
+        result.extend_from_slice(&sw_enforced_data);
         let mac = Self::compute_hmac(hmac, &result, hidden)?;
         result.extend_from_slice(&mac);
         Ok(result)
@@ -156,9 +183,11 @@ impl KeyBlob {
         data: &[u8],
         hidden: &[KeyParam],
     ) -> Result<Vec<u8>, crate::Error> {
-        let hidden_data = crate::tag::legacy::serialize(hidden);
-        let mut op =
-            hmac.begin(crypto::hmac::Key(HMAC_KEY.to_vec()), crate::wire::keymint::Digest::Sha256)?;
+        let hidden_data = crate::tag::legacy::serialize(hidden)?;
+        let mut op = hmac.begin(
+            crypto::hmac::Key(try_to_vec(HMAC_KEY)?).into(),
+            kmr_wire::keymint::Digest::Sha256,
+        )?;
         op.update(data)?;
         op.update(&hidden_data)?;
         let mut tag = op.finish()?;
@@ -172,16 +201,16 @@ impl KeyBlob {
 /// - `ApplicationData(data)` if present
 /// - (repeated) `RootOfTrust(rot)` where `rot` is a hardcoded root of trust (expected to
 ///   be the CBOR serialization of a `RootOfTrustInfo` instance).
-pub fn hidden(params: &[KeyParam], rots: &[&[u8]]) -> Vec<KeyParam> {
+pub fn hidden(params: &[KeyParam], rots: &[&[u8]]) -> Result<Vec<KeyParam>, Error> {
     let mut results = Vec::new();
     if let Ok(Some(app_id)) = get_opt_tag_value!(params, ApplicationId) {
-        results.push(KeyParam::ApplicationId(app_id.to_vec()));
+        results.try_push(KeyParam::ApplicationId(try_to_vec(app_id)?))?;
     }
     if let Ok(Some(app_data)) = get_opt_tag_value!(params, ApplicationData) {
-        results.push(KeyParam::ApplicationData(app_data.to_vec()));
+        results.try_push(KeyParam::ApplicationData(try_to_vec(app_data)?))?;
     }
     for rot in rots {
-        results.push(KeyParam::RootOfTrust(rot.to_vec()));
+        results.try_push(KeyParam::RootOfTrust(try_to_vec(rot)?))?;
     }
-    results
+    Ok(results)
 }

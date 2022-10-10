@@ -1,10 +1,14 @@
 //! Functionality related to triple DES encryption
 
-use super::{nonce, KeySizeInBits, OutputSize, Rng};
-use crate::wire::keymint::{BlockMode, KeyParam, PaddingMode};
-use crate::{km_err, tag, Error};
+use super::{nonce, Rng};
+use crate::{km_err, tag, try_to_vec, Error};
 use alloc::vec::Vec;
 use core::convert::TryInto;
+use kmr_wire::{
+    keymint::{BlockMode, KeyParam, PaddingMode},
+    KeySizeInBits,
+};
+use zeroize::ZeroizeOnDrop;
 
 /// Size of an DES block in bytes.
 pub const BLOCK_SIZE: usize = 8;
@@ -19,7 +23,7 @@ pub const KEY_SIZE_BYTES: usize = 24;
 
 /// A 3-DES key. The key data is 24 bytes / 192 bits in length, but only 7/8 of the
 /// bits are used giving an effective key size of 168 bits.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct Key(pub [u8; KEY_SIZE_BYTES]);
 
 impl Key {
@@ -31,8 +35,8 @@ impl Key {
     }
     /// Create a new 3-DES key from 24 bytes of data.
     pub fn new_from(data: &[u8]) -> Result<Key, Error> {
+        let data = try_to_vec(data)?;
         Ok(Key(data
-            .to_vec()
             .try_into()
             .map_err(|_e| km_err!(UnsupportedKeySize, "3-DES key size wrong"))?))
     }
@@ -85,35 +89,6 @@ impl Mode {
                 }
             }
             _ => Err(km_err!(UnsupportedBlockMode, "want ECB/CBC")),
-        }
-    }
-}
-
-impl OutputSize for Mode {
-    fn update_max_output_len(&self, input_len: usize) -> usize {
-        match self {
-            Mode::EcbNoPadding
-            | Mode::EcbPkcs7Padding
-            | Mode::CbcNoPadding { nonce: _ }
-            | Mode::CbcPkcs7Padding { nonce: _ } => {
-                // Block modes - worst case: (BLOCK_SIZE-1) bytes of input already accumulated.
-                let accumulated_len = BLOCK_SIZE - 1 + input_len;
-                let full_block_count = accumulated_len / BLOCK_SIZE;
-                full_block_count * BLOCK_SIZE
-            }
-        }
-    }
-
-    fn finish_max_output_len(&self) -> usize {
-        match self {
-            Mode::EcbNoPadding | Mode::CbcNoPadding { nonce: _ } => {
-                // Unpadded block mode: caller must have provided input in whole blocks.
-                0
-            }
-            Mode::EcbPkcs7Padding | Mode::CbcPkcs7Padding { nonce: _ } => {
-                // Padded block modes - worst case: emit one block of padding
-                BLOCK_SIZE
-            }
         }
     }
 }
