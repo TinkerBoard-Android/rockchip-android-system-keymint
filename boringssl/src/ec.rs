@@ -1,7 +1,11 @@
-use crate::{digest_into_openssl, openssl_err, ossl};
+use crate::{cvt, cvt_p, digest_into_openssl, openssl_err, openssl_last_err, ossl};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+#[cfg(soong)]
+use bssl_ffi as ffi;
 use core::ops::DerefMut;
+use core::ptr;
+use foreign_types::ForeignType;
 use kmr_common::{
     crypto,
     crypto::{ec, ec::Key, AccumulatingOperation, CurveType, OpaqueOr},
@@ -189,8 +193,6 @@ impl crypto::AccumulatingOperation for BoringEcAgreeOperation {
                 // The BoringSSL `EVP_PKEY` interface does not support X25519, so need to invoke the
                 // `ffi:X25519()` method directly. First need to extract the raw peer key from the
                 // `SubjectPublicKeyInfo` it arrives in.
-                use bssl_ffi as ffi;
-
                 let peer_key =
                     ossl!(openssl::pkey::PKey::public_key_from_der(&self.pending_input))?;
                 let peer_key_type = peer_key.id();
@@ -231,9 +233,25 @@ impl crypto::AccumulatingOperation for BoringEcAgreeOperation {
 
 /// [`crypto::EcSignOperation`] based on BoringSSL, when an external digest is used.
 pub struct BoringEcDigestSignOperation {
+    // Safety: `pkey` internally holds a pointer to BoringSSL-allocated data (`EVP_PKEY`),
+    // as do both of the raw pointers.  This means that this item stays valid under moves,
+    // because the FFI-allocated data doesn't move.
     pkey: openssl::pkey::PKey<openssl::pkey::Private>,
-    digest: MessageDigest,
-    pending_input: Vec<u8>, // TODO: need size limit
+
+    // Safety invariant: both `pctx` and `md_ctx` are non-`nullptr` once item is constructed.
+    md_ctx: *mut ffi::EVP_MD_CTX,
+    pctx: *mut ffi::EVP_PKEY_CTX,
+}
+
+impl Drop for BoringEcDigestSignOperation {
+    fn drop(&mut self) {
+        unsafe {
+            // Safety: `EVP_MD_CTX_free()` handles `nullptr`, so it's fine to drop a
+            // partly-constructed item.  `pctx` is owned by the `md_ctx`, so no need to explicitly
+            // free it.
+            ffi::EVP_MD_CTX_free(self.md_ctx);
+        }
+    }
 }
 
 impl BoringEcDigestSignOperation {
@@ -241,22 +259,64 @@ impl BoringEcDigestSignOperation {
         let group = nist_curve_to_group(curve)?;
         let ec_key = ossl!(private_key_from_der_for_group(&key.0, group.as_ref()))?;
         let pkey = ossl!(openssl::pkey::PKey::from_ec_key(ec_key))?;
-        Ok(Self { pkey, digest, pending_input: Vec::new() })
+
+        unsafe {
+            // TODO: move initialization to single central place
+            ffi::init();
+
+            let mut op = BoringEcDigestSignOperation {
+                pkey,
+                md_ctx: cvt_p(ffi::EVP_MD_CTX_new())?,
+                pctx: ptr::null_mut(),
+            };
+
+            // Safety: `op.md_ctx` must be non-`nullptr` to reach here.
+            let r = ffi::EVP_DigestSignInit(
+                op.md_ctx,
+                &mut op.pctx,
+                digest.as_ptr(),
+                ptr::null_mut(),
+                op.pkey.as_ptr(),
+            );
+            if r != 1 {
+                return Err(openssl_last_err());
+            }
+            if op.pctx.is_null() {
+                return Err(km_err!(UnknownError, "no PCTX!"));
+            }
+            // Safety invariant: both `pctx` and `md_ctx` are non-`nullptr` on success.
+            Ok(op)
+        }
     }
 }
 
 impl crypto::AccumulatingOperation for BoringEcDigestSignOperation {
     fn update(&mut self, data: &[u8]) -> Result<(), Error> {
-        // TODO: figure out a way to fix Signer lifetime to allow incremental feeding
-        self.pending_input.extend_from_slice(data);
+        unsafe {
+            // Safety: `data` is a valid slice, and `self.md_ctx` is non-`nullptr`.
+            cvt(ffi::EVP_DigestUpdate(self.md_ctx, data.as_ptr() as *const _, data.len()))?;
+        }
         Ok(())
     }
 
     fn finish(self: Box<Self>) -> Result<Vec<u8>, Error> {
-        let mut signer = ossl!(openssl::sign::Signer::new(self.digest, &self.pkey))?;
-        ossl!(signer.update(&self.pending_input))?;
-        let sig = ossl!(signer.sign_to_vec())?;
-        Ok(sig)
+        let mut max_siglen = 0;
+        unsafe {
+            // Safety: `self.md_ctx` is non-`nullptr`.
+            cvt(ffi::EVP_DigestSignFinal(self.md_ctx, ptr::null_mut(), &mut max_siglen))?;
+        }
+        let mut buf = vec_try![0; max_siglen]?;
+        let mut actual_siglen = max_siglen;
+        unsafe {
+            // Safety: `self.md_ctx` is non-`nullptr`, and `buf` does have `actual_siglen` bytes.
+            cvt(ffi::EVP_DigestSignFinal(
+                self.md_ctx,
+                buf.as_mut_ptr() as *mut _,
+                &mut actual_siglen,
+            ))?;
+        }
+        buf.truncate(actual_siglen);
+        Ok(buf)
     }
 }
 
