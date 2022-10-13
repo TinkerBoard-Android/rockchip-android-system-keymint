@@ -12,3 +12,6 @@ kmr-wire = "*"
 libc = "^0.2.112"
 log = "^0.4"
 openssl = "^0.10.36"
+
+[dev-dependencies]
+kmr-tests = "*"

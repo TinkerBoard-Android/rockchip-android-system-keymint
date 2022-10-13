@@ -4,6 +4,7 @@ members = [
   "common",
   "derive",
   "ta",
+  "tests",
   "wire",
 ]
 
@@ -12,4 +13,5 @@ kmr-derive = { path = "derive" }
 kmr-common = { path = "common" }
 kmr-crypto-boring = { path = "boringssl" }
 kmr-ta = { path = "ta" }
+kmr-tests = { path = "tests" }
 kmr-wire = { path = "wire" }
