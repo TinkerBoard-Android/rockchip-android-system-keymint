@@ -128,3 +128,21 @@ fn digest_into_openssl(digest: Digest) -> Option<MessageDigest> {
         Digest::Sha512 => Some(MessageDigest::sha512()),
     }
 }
+
+#[inline]
+fn cvt_p<T>(r: *mut T) -> Result<*mut T, Error> {
+    if r.is_null() {
+        Err(openssl_last_err())
+    } else {
+        Ok(r)
+    }
+}
+
+#[inline]
+fn cvt(r: libc::c_int) -> Result<libc::c_int, Error> {
+    if r <= 0 {
+        Err(openssl_last_err())
+    } else {
+        Ok(r)
+    }
+}
