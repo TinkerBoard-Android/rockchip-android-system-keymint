@@ -10,8 +10,8 @@ fn test_auto_added_const() {
             want.insert(*tag);
         }
     }
-    let got: BTreeSet<Tag> = AUTO_ADDED_TAGS.iter().cloned().collect();
-    assert_eq!(want, got, "AUTO_ADDED_TAGS constant doesn't match INFO contents");
+    let got: BTreeSet<Tag> = AUTO_ADDED_CHARACTERISTICS.iter().cloned().collect();
+    assert_eq!(want, got, "AUTO_ADDED_CHARACTERISTICS constant doesn't match INFO contents");
 }
 
 #[test]
@@ -22,8 +22,20 @@ fn test_keystore_enforced_const() {
             want.insert(*tag);
         }
     }
-    let got: BTreeSet<Tag> = KEYSTORE_ENFORCED_TAGS.iter().cloned().collect();
-    assert_eq!(want, got, "KEYSTORE_ENFORCED_TAGS constant doesn't match INFO contents");
+    let got: BTreeSet<Tag> = KEYSTORE_ENFORCED_CHARACTERISTICS.iter().cloned().collect();
+    assert_eq!(want, got, "KEYSTORE_ENFORCED_CHARACTERISTICS constant doesn't match INFO contents");
+}
+
+#[test]
+fn test_keymint_enforced_const() {
+    let mut want = BTreeSet::new();
+    for (tag, info) in INFO.iter() {
+        if info.characteristic == Characteristic::KeyMintEnforced {
+            want.insert(*tag);
+        }
+    }
+    let got: BTreeSet<Tag> = KEYMINT_ENFORCED_CHARACTERISTICS.iter().cloned().collect();
+    assert_eq!(want, got, "KEYMINT_ENFORCED_CHARACTERISTICS constant doesn't match INFO contents");
 }
 
 #[test]

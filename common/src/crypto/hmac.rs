@@ -8,22 +8,34 @@ use zeroize::ZeroizeOnDrop;
 /// Minimum size of an HMAC key in bits.
 pub const MIN_KEY_SIZE_BITS: usize = 64;
 
-/// Maximum size of an HMAC key in bits.
-pub const MAX_KEY_SIZE_BITS: usize = 512;
+/// Maximum size of a StrongBox HMAC key in bits.
+pub const MAX_STRONGBOX_KEY_SIZE_BITS: usize = 512;
+
+/// Maximum size of a HMAC key in bits.
+pub const MAX_KEY_SIZE_BITS: usize = 1024;
 
 /// An HMAC key.
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct Key(pub Vec<u8>);
 
-/// Check that the size of an HMAC key is within the allowed size for the KeyMint HAL.
-pub fn valid_hal_size(key_size: KeySizeInBits) -> Result<(), Error> {
+fn valid_size(key_size: KeySizeInBits, max_size_bits: usize) -> Result<(), Error> {
     if key_size.0 % 8 != 0 {
         Err(km_err!(UnsupportedKeySize, "key size {} bits not a multiple of 8", key_size.0))
-    } else if !(MIN_KEY_SIZE_BITS..=MAX_KEY_SIZE_BITS).contains(&(key_size.0 as usize)) {
+    } else if !(MIN_KEY_SIZE_BITS..=max_size_bits).contains(&(key_size.0 as usize)) {
         Err(km_err!(UnsupportedKeySize, "unsupported KEY_SIZE {} bits for HMAC", key_size.0))
     } else {
         Ok(())
     }
+}
+
+/// Check that the size of an HMAC key is within the allowed size for the KeyMint HAL.
+pub fn valid_hal_size(key_size: KeySizeInBits) -> Result<(), Error> {
+    valid_size(key_size, MAX_KEY_SIZE_BITS)
+}
+
+/// Check that the size of an HMAC key is within the allowed size for a StrongBox implementation.
+pub fn valid_strongbox_hal_size(key_size: KeySizeInBits) -> Result<(), Error> {
+    valid_size(key_size, MAX_STRONGBOX_KEY_SIZE_BITS)
 }
 
 impl Key {
