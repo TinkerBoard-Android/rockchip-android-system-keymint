@@ -436,7 +436,8 @@ impl<'a> crate::KeyMintTa<'a> {
         }
 
         // Now build the keyblob.
-        let root_kek = self.root_kek();
+        let kek_context = self.dev.keys.kek_context();
+        let root_kek = self.root_kek(&kek_context);
         let hidden = tag::hidden(params, self.root_of_trust()?)?;
         let encrypted_keyblob = keyblob::encrypt(
             self.hw_info.security_level,
@@ -448,6 +449,7 @@ impl<'a> crate::KeyMintTa<'a> {
             self.imp.hkdf,
             &mut *self.imp.rng,
             &root_kek,
+            &kek_context,
             keyblob,
             hidden,
         )?;
@@ -626,9 +628,7 @@ impl<'a> crate::KeyMintTa<'a> {
     ) -> Result<Vec<u8>, Error> {
         // TODO: cope with previous versions/encodings of keys
         let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(keyblob_to_upgrade)?;
-        let sdd_slot = match &encrypted_keyblob {
-            keyblob::EncryptedKeyBlob::V1(blob) => blob.secure_deletion_slot,
-        };
+        let sdd_slot = encrypted_keyblob.secure_deletion_slot();
 
         let hidden = tag::hidden(&upgrade_params, self.root_of_trust()?)?;
         let mut keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden.clone())?;
@@ -727,8 +727,9 @@ impl<'a> crate::KeyMintTa<'a> {
             (None, _) => {}
         }
 
-        // Now re-build the keyblob.
-        let root_kek = self.root_kek();
+        // Now re-build the keyblob. Use a potentially fresh key encryption key.
+        let kek_context = self.dev.keys.kek_context();
+        let root_kek = self.root_kek(&kek_context);
         let encrypted_keyblob = keyblob::encrypt(
             self.hw_info.security_level,
             match &mut self.dev.sdd_mgr {
@@ -739,6 +740,7 @@ impl<'a> crate::KeyMintTa<'a> {
             self.imp.hkdf,
             &mut *self.imp.rng,
             &root_kek,
+            &kek_context,
             keyblob,
             hidden,
         )?;

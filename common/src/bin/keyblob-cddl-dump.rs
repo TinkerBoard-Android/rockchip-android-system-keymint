@@ -54,6 +54,7 @@ fn main() {
     schema.add(keyblob::EncryptedKeyBlob::V1(keyblob::EncryptedKeyBlobV1 {
         characteristics: vec![],
         key_derivation_input: [0u8; 32],
+        kek_context: vec![],
         encrypted_key_material: coset::CoseEncrypt0Builder::new()
             .protected(
                 coset::HeaderBuilder::new().algorithm(coset::iana::Algorithm::A256GCM).build(),
@@ -66,6 +67,7 @@ fn main() {
     schema.add(keyblob::EncryptedKeyBlobV1 {
         characteristics: vec![],
         key_derivation_input: [0u8; 32],
+        kek_context: vec![],
         encrypted_key_material: coset::CoseEncrypt0Builder::new()
             .protected(
                 coset::HeaderBuilder::new().algorithm(coset::iana::Algorithm::A256GCM).build(),
