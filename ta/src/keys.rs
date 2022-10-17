@@ -2,23 +2,73 @@
 
 use crate::{cert, device};
 use alloc::vec::Vec;
-use core::borrow::Borrow;
 use core::cmp::Ordering;
+use core::{borrow::Borrow, convert::TryFrom};
+use der::{Decode, Sequence};
 use kmr_common::{
-    crypto::{self, rsa, KeyMaterial},
+    crypto::{self, aes, rsa, KeyMaterial, OpaqueOr},
     get_bool_tag_value, get_opt_tag_value, get_tag_value, keyblob, km_err, tag, try_to_vec,
     vec_try_with_capacity, Error, FallibleAllocExt,
 };
 use kmr_wire::{
     keymint::{
-        AttestationKey, Digest, EcCurve, ErrorCode, KeyCharacteristics, KeyCreationResult,
-        KeyFormat, KeyOrigin, KeyParam, KeyPurpose, SecurityLevel,
+        AttestationKey, Digest, EcCurve, ErrorCode, HardwareAuthenticatorType, KeyCharacteristics,
+        KeyCreationResult, KeyFormat, KeyOrigin, KeyParam, KeyPurpose, SecurityLevel,
     },
     *,
 };
 use log::{error, warn};
 use spki::SubjectPublicKeyInfo;
 use x509_cert::ext::pkix::KeyUsages;
+
+/// Contents of wrapping key data
+///
+/// ```asn1
+/// SecureKeyWrapper ::= SEQUENCE {
+///     version                   INTEGER, # Value 0
+///     encryptedTransportKey     OCTET_STRING,
+///     initializationVector      OCTET_STRING,
+///     keyDescription            KeyDescription, # See below
+///     encryptedKey              OCTET_STRING,
+///     tag                       OCTET_STRING,
+/// }
+/// ```
+#[derive(Debug, Clone, Sequence)]
+pub struct SecureKeyWrapper<'a> {
+    pub version: i32,
+    #[asn1(type = "OCTET STRING")]
+    pub encrypted_transport_key: &'a [u8],
+    #[asn1(type = "OCTET STRING")]
+    pub initialization_vector: &'a [u8],
+    pub key_description: KeyDescription,
+    #[asn1(type = "OCTET STRING")]
+    pub encrypted_key: &'a [u8],
+    #[asn1(type = "OCTET STRING")]
+    pub tag: &'a [u8],
+}
+
+const SECURE_KEY_WRAPPER_VERSION: i32 = 0;
+
+/// Contents of key description.
+///
+/// ``asn1
+/// KeyDescription ::= SEQUENCE {
+///     keyFormat    INTEGER, # Values from KeyFormat enum
+///     keyParams    AuthorizationList, # See cert.rs
+/// }
+/// ```
+#[derive(Debug, Clone, Sequence)]
+pub struct KeyDescription {
+    pub key_format: i32,
+    pub key_params: cert::AuthorizationList,
+}
+
+/// Indication of whether key import has a secure wrapper.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum KeyImport {
+    Wrapped,
+    NonWrapped,
+}
 
 /// Combined information needed for signing a fresh public key.
 #[derive(Clone)]
@@ -231,6 +281,7 @@ impl<'a> crate::KeyMintTa<'a> {
         key_format: KeyFormat,
         key_data: &[u8],
         attestation_key: Option<AttestationKey>,
+        import_type: KeyImport,
     ) -> Result<KeyCreationResult, Error> {
         let (mut chars, key_material) = tag::extract_key_import_characteristics(
             &self.imp,
@@ -240,7 +291,14 @@ impl<'a> crate::KeyMintTa<'a> {
             key_format,
             key_data,
         )?;
-        self.add_keymint_tags(&mut chars, KeyOrigin::Imported)?;
+        match import_type {
+            KeyImport::NonWrapped => {
+                self.add_keymint_tags(&mut chars, KeyOrigin::Imported)?;
+            }
+            KeyImport::Wrapped => {
+                self.add_keymint_tags(&mut chars, KeyOrigin::SecurelyImported)?;
+            }
+        }
 
         self.finish_keyblob_creation(params, attestation_key, chars, key_material)
     }
@@ -393,14 +451,161 @@ impl<'a> crate::KeyMintTa<'a> {
 
     pub(crate) fn import_wrapped_key(
         &mut self,
-        _wrapped_key_data: &[u8],
-        _wrapping_key_blob: &[u8],
-        _masking_key: &[u8],
-        _unwrapping_params: Vec<KeyParam>,
-        _password_sid: i64,
-        _biometric_sid: i64,
+        wrapped_key_data: &[u8],
+        wrapping_key_blob: &[u8],
+        masking_key: &[u8],
+        unwrapping_params: &[KeyParam],
+        password_sid: i64,
+        biometric_sid: i64,
     ) -> Result<KeyCreationResult, Error> {
-        Err(km_err!(Unimplemented, "TODO: import wrapped key"))
+
+        // Decrypt the wrapping key blob
+        let encrypted_wrapping_key_blob = keyblob::EncryptedKeyBlob::new(wrapping_key_blob)?;
+        let hidden_params = tag::hidden(unwrapping_params, self.root_of_trust()?)?;
+        let wrapping_key = self.keyblob_decrypt(encrypted_wrapping_key_blob, hidden_params)?;
+        let keyblob::PlaintextKeyBlob { characteristics, key_material } = wrapping_key;
+
+        // Decode the ASN.1 DER encoded `SecureKeyWrapper`.
+        let secure_key_wrapper = SecureKeyWrapper::from_der(wrapped_key_data)?;
+
+        if secure_key_wrapper.version != SECURE_KEY_WRAPPER_VERSION {
+            return Err(km_err!(InvalidArgument, "invalid version in Secure Key Wrapper."));
+        }
+
+        // Decrypt the masked transport key.
+        let masked_transport_key = match key_material {
+            KeyMaterial::Rsa(key) => {
+                // Check the requirements on the wrapping key characterisitcs
+                let decrypt_mode = tag::check_rsa_wrapping_key_params(
+                    keyblob::characteristics_at(&characteristics, self.hw_info.security_level)?,
+                    unwrapping_params,
+                )?;
+
+                // Decrypt the masked and encrypted transport key
+                let mut crypto_op = self.imp.rsa.begin_decrypt(key, decrypt_mode)?;
+                crypto_op.as_mut().update(secure_key_wrapper.encrypted_transport_key)?;
+                crypto_op.finish()?
+            }
+            // TODO: For now, we consider wrapping keys to be RSA keys only.
+            _ => {
+                return Err(km_err!(InvalidArgument, "invalid key algorithm for transport key"));
+            }
+        };
+
+        if masked_transport_key.len() != masking_key.len() {
+            return Err(km_err!(
+                InvalidArgument,
+                "masked transport key is {} bytes, but masking key is {} bytes",
+                masked_transport_key.len(),
+                masking_key.len()
+            ));
+        }
+
+        let unmasked_transport_key: Vec<u8> =
+            masked_transport_key.iter().zip(masking_key).map(|(x, y)| x ^ y).collect();
+
+        let aes_transport_key = aes::Key::Aes256(unmasked_transport_key.try_into().map_err(|_e| {
+                km_err!(
+                    InvalidArgument,
+                    "transport key len {} not correct for AES-256 key",
+                    masked_transport_key.len()
+                )
+            })?);
+
+        // Validate the size of the IV and match the `aes::GcmMode` based on the tag size.
+        let iv_len = secure_key_wrapper.initialization_vector.len();
+        if iv_len != aes::GCM_NONCE_SIZE {
+            return Err(km_err!(
+                InvalidArgument,
+                "IV length is of {} bytes, which should be of {} bytes",
+                iv_len,
+                aes::GCM_NONCE_SIZE
+            ));
+        }
+        let tag_len = secure_key_wrapper.tag.len();
+        let gcm_mode = match tag_len {
+            12 => crypto::aes::GcmMode::GcmTag12 {
+                nonce: secure_key_wrapper.initialization_vector.try_into()
+                .unwrap(/* safe: len checked */),
+            },
+            13 => crypto::aes::GcmMode::GcmTag13 {
+                nonce: secure_key_wrapper.initialization_vector.try_into()
+                .unwrap(/* safe: len checked */),
+            },
+            14 => crypto::aes::GcmMode::GcmTag14 {
+                nonce: secure_key_wrapper.initialization_vector.try_into()
+                .unwrap(/* safe: len checked */),
+            },
+            15 => crypto::aes::GcmMode::GcmTag15 {
+                nonce: secure_key_wrapper.initialization_vector.try_into()
+                .unwrap(/* safe: len checked */),
+            },
+            16 => crypto::aes::GcmMode::GcmTag16 {
+                nonce: secure_key_wrapper.initialization_vector.try_into()
+                .unwrap(/* safe: len checked */),
+            },
+            v => {
+                return Err(km_err!(
+                    InvalidMacLength,
+                    "want 12-16 byte tag for AES-GCM not {} bytes",
+                    v
+                ))
+            }
+        };
+
+        // Decrypt the encrypted key to be imported, using the ASN.1 DER (re-)encoding of the key
+        // description as the AAD.
+        let mut op = self.imp.aes.begin_aead(
+            OpaqueOr::Explicit(aes_transport_key),
+            gcm_mode,
+            crypto::SymmetricOperation::Decrypt,
+        )?;
+        op.update_aad(&cert::asn1_der_encode(&secure_key_wrapper.key_description)?)?;
+
+        let mut imported_key_data = op.update(secure_key_wrapper.encrypted_key)?;
+        imported_key_data.try_extend_from_slice(&op.update(secure_key_wrapper.tag)?)?;
+        imported_key_data.try_extend_from_slice(&op.finish()?)?;
+
+        let mut imported_key_params = secure_key_wrapper.key_description.key_params.auths;
+        if let Some(secure_id) = get_opt_tag_value!(imported_key_params.clone(), UserSecureId)? {
+            // If both the Password and Fingerprint bits are set in UserSecureId, the password SID
+            // should be used, because biometric auth tokens contain both password and fingerprint
+            // SIDs, but password auth tokens only contain the password SID.
+            if (secure_id & (HardwareAuthenticatorType::Password as u64)
+                == (HardwareAuthenticatorType::Password as u64))
+                && (secure_id & (HardwareAuthenticatorType::Fingerprint as u64)
+                    == (HardwareAuthenticatorType::Fingerprint as u64))
+            {
+                imported_key_params
+                    .retain(|key_param| !matches!(key_param, KeyParam::UserSecureId(_)));
+                imported_key_params.try_push(KeyParam::UserSecureId(password_sid as u64))?;
+            } else if secure_id & (HardwareAuthenticatorType::Password as u64)
+                == (HardwareAuthenticatorType::Password as u64)
+            {
+                imported_key_params
+                    .retain(|key_param| !matches!(key_param, KeyParam::UserSecureId(_)));
+                imported_key_params.try_push(KeyParam::UserSecureId(password_sid as u64))?;
+            } else if secure_id & (HardwareAuthenticatorType::Fingerprint as u64)
+                == (HardwareAuthenticatorType::Fingerprint as u64)
+            {
+                imported_key_params
+                    .retain(|key_param| !matches!(key_param, KeyParam::UserSecureId(_)));
+                imported_key_params.try_push(KeyParam::UserSecureId(biometric_sid as u64))?;
+            }
+        };
+        self.import_key(
+            &imported_key_params,
+            KeyFormat::try_from(secure_key_wrapper.key_description.key_format).map_err(|_e| {
+                km_err!(
+                    UnsupportedKeyFormat,
+                    "could not convert the provided keyformat {}",
+                    secure_key_wrapper.key_description.key_format
+                )
+            })?,
+            &imported_key_data,
+            None,
+            KeyImport::Wrapped,
+        )
     }
 
     pub(crate) fn upgrade_key(
