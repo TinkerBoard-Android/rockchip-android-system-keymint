@@ -16,16 +16,16 @@ use core::{cell::RefCell, convert::TryFrom};
 use kmr_common::{
     crypto::{self, RawKeyMaterial},
     keyblob::{self, RootOfTrustInfo},
-    km_err, vec_try, vec_try_with_capacity, Error, FallibleAllocExt,
+    km_err, tag, vec_try, vec_try_with_capacity, Error, FallibleAllocExt,
 };
 use kmr_derive::AsCborValue;
 use kmr_wire::{
     coset::TaggedCborSerializable,
     keymint::{
-        Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyOrigin, KeyParam,
-        SecurityLevel, VerifiedBootState,
+        Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyMintHardwareInfo, KeyOrigin,
+        KeyParam, SecurityLevel, VerifiedBootState,
     },
-    secureclock::Timestamp,
+    secureclock::{TimeStampToken, Timestamp},
     sharedsecret::SharedSecretParameters,
     *,
 };
@@ -402,11 +402,10 @@ impl<'a> KeyMintTa<'a> {
                 verified_boot_hash: boot_info.verified_boot_hash,
             };
             self.boot_info = Some(boot_info);
-            self.rot_data = Some(
-                rot_info
-                    .into_vec()
-                    .unwrap_or_else(|_| b"Internal error! Failed to encode RoT".to_vec()),
-            );
+            self.rot_data =
+                Some(rot_info.into_vec().unwrap_or_else(|_| {
+                    b"Internal error! Failed to encode root-of-trust".to_vec()
+                }));
         } else {
             warn!(
                 "Boot info already set to {:?}, ignoring new values {:?}",
@@ -561,6 +560,30 @@ impl<'a> KeyMintTa<'a> {
             }
 
             // IKeyMintDevice messages.
+            PerformOpReq::DeviceGetHardwareInfo(_req) => match self.get_hardware_info() {
+                Ok(ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::DeviceGetHardwareInfo(GetHardwareInfoResponse { ret })),
+                },
+                Err(e) => op_error_rsp(GetHardwareInfoRequest::CODE, e),
+            },
+            PerformOpReq::DeviceAddRngEntropy(req) => match self.add_rng_entropy(&req.data) {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::DeviceAddRngEntropy(AddRngEntropyResponse {})),
+                },
+                Err(e) => op_error_rsp(AddRngEntropyRequest::CODE, e),
+            },
+            PerformOpReq::DeviceDestroyAttestationIds(_req) => match self.destroy_attestation_ids()
+            {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::DeviceDestroyAttestationIds(
+                        DestroyAttestationIdsResponse {},
+                    )),
+                },
+                Err(e) => op_error_rsp(DestroyAttestationIdsRequest::CODE, e),
+            },
             PerformOpReq::DeviceBegin(req) => {
                 match self.begin_operation(req.purpose, &req.key_blob, req.params, req.auth_token) {
                     Ok(ret) => PerformOpResponse {
@@ -568,6 +591,48 @@ impl<'a> KeyMintTa<'a> {
                         rsp: Some(PerformOpRsp::DeviceBegin(BeginResponse { ret })),
                     },
                     Err(e) => op_error_rsp(BeginRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceDeviceLocked(req) => {
+                match self.device_locked(req.password_only, req.timestamp_token) {
+                    Ok(_ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceDeviceLocked(DeviceLockedResponse {})),
+                    },
+                    Err(e) => op_error_rsp(DeviceLockedRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceEarlyBootEnded(_req) => match self.early_boot_ended() {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::DeviceEarlyBootEnded(EarlyBootEndedResponse {})),
+                },
+                Err(e) => op_error_rsp(EarlyBootEndedRequest::CODE, e),
+            },
+            PerformOpReq::GetRootOfTrustChallenge(_req) => match self.get_root_of_trust_challenge()
+            {
+                Ok(ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::GetRootOfTrustChallenge(
+                        GetRootOfTrustChallengeResponse { ret },
+                    )),
+                },
+                Err(e) => op_error_rsp(GetRootOfTrustChallengeRequest::CODE, e),
+            },
+            PerformOpReq::GetRootOfTrust(req) => match self.get_root_of_trust(&req.challenge) {
+                Ok(ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::GetRootOfTrust(GetRootOfTrustResponse { ret })),
+                },
+                Err(e) => op_error_rsp(GetRootOfTrustRequest::CODE, e),
+            },
+            PerformOpReq::SendRootOfTrust(req) => {
+                match self.send_root_of_trust(&req.root_of_trust) {
+                    Ok(_ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::SendRootOfTrust(SendRootOfTrustResponse {})),
+                    },
+                    Err(e) => op_error_rsp(SendRootOfTrustRequest::CODE, e),
                 }
             }
 
@@ -673,6 +738,173 @@ impl<'a> KeyMintTa<'a> {
         }
     }
 
+    fn add_rng_entropy(&mut self, data: &[u8]) -> Result<(), Error> {
+        if data.len() > 2048 {
+            return Err(km_err!(InvalidInputLength, "entropy size {} too large", data.len()));
+        };
+
+        info!("add {} bytes of entropy", data.len());
+        self.imp.rng.add_entropy(data);
+        Ok(())
+    }
+
+    fn early_boot_ended(&mut self) -> Result<(), Error> {
+        info!("early boot ended");
+        self.in_early_boot = false;
+        Ok(())
+    }
+
+    fn device_locked(
+        &mut self,
+        password_only: bool,
+        timestamp_token: Option<TimeStampToken>,
+    ) -> Result<(), Error> {
+        info!(
+            "device locked, password-required={}, timestamp={:?}",
+            password_only, timestamp_token
+        );
+
+        let now = if let Some(clock) = &self.imp.clock {
+            clock.now().into()
+        } else if let Some(token) = timestamp_token {
+            // Note that any `challenge` value in the `TimeStampToken` cannot be checked, because
+            // there is nothing to check it against.
+            let mac_input = clock::timestamp_token_mac_input(&token)?;
+            if !self.verify_device_hmac(&mac_input, &token.mac)? {
+                return Err(km_err!(InvalidArgument, "timestamp MAC not verified"));
+            }
+            token.timestamp
+        } else {
+            return Err(km_err!(InvalidArgument, "no clock and no external timestamp provided!"));
+        };
+
+        *self.device_locked.borrow_mut() = if password_only {
+            LockState::PasswordLockedSince(now)
+        } else {
+            LockState::LockedSince(now)
+        };
+        Ok(())
+    }
+
+    fn get_hardware_info(&self) -> Result<KeyMintHardwareInfo, Error> {
+        Ok(KeyMintHardwareInfo {
+            version_number: self.hw_info.version_number,
+            security_level: self.hw_info.security_level,
+            key_mint_name: self.hw_info.impl_name.to_string(),
+            key_mint_author_name: self.hw_info.author_name.to_string(),
+            timestamp_token_required: self.imp.clock.is_none(),
+        })
+    }
+
+    fn destroy_attestation_ids(&mut self) -> Result<(), Error> {
+        match self.dev.attest_ids.as_mut() {
+            Some(attest_ids) => {
+                error!("destroying all device attestation IDs!");
+                attest_ids.destroy_all()
+            }
+            None => {
+                error!("destroying device attestation IDs requested but not supported");
+                Err(km_err!(Unimplemented, "no attestation ID functionality available"))
+            }
+        }
+    }
+
+    fn get_root_of_trust_challenge(&mut self) -> Result<[u8; 16], Error> {
+        if !self.is_strongbox() {
+            return Err(km_err!(Unimplemented, "root-of-trust challenge only for StrongBox"));
+        }
+        self.imp.rng.fill_bytes(&mut self.rot_challenge[..]);
+        Ok(self.rot_challenge)
+    }
+
+    fn get_root_of_trust(&mut self, challenge: &[u8]) -> Result<Vec<u8>, Error> {
+        if self.is_strongbox() {
+            return Err(km_err!(Unimplemented, "root-of-trust retrieval not for StrongBox"));
+        }
+        let payload = if let Some(info) = &self.boot_info {
+            info.clone()
+                .to_tagged_vec()
+                .map_err(|_e| km_err!(UnknownError, "Failed to CBOR-encode RootOfTrust"))
+        } else {
+            error!("RootOfTrust not known!");
+            Err(km_err!(HardwareNotYetAvailable, "root-of-trust unavailable"))
+        }?;
+
+        let mac0 = coset::CoseMac0Builder::new()
+            .protected(
+                coset::HeaderBuilder::new().algorithm(coset::iana::Algorithm::HMAC_256_256).build(),
+            )
+            .payload(payload)
+            .try_create_tag(challenge, |data| self.device_hmac(data))?
+            .build();
+        mac0.to_tagged_vec()
+            .map_err(|_e| km_err!(UnknownError, "Failed to CBOR-encode RootOfTrust"))
+    }
+
+    fn send_root_of_trust(&mut self, root_of_trust: &[u8]) -> Result<(), Error> {
+        if !self.is_strongbox() {
+            return Err(km_err!(Unimplemented, "root-of-trust delivery only for StrongBox"));
+        }
+        let mac0 = coset::CoseMac0::from_tagged_slice(root_of_trust)
+            .map_err(|_e| km_err!(InvalidArgument, "Failed to CBOR-decode CoseMac0"))?;
+        mac0.verify_tag(&self.rot_challenge, |tag, data| {
+            match self.verify_device_hmac(data, tag) {
+                Ok(true) => Ok(()),
+                Ok(false) => {
+                    Err(km_err!(VerificationFailed, "HMAC verification of RootOfTrust failed"))
+                }
+                Err(e) => Err(e),
+            }
+        })?;
+        let payload =
+            mac0.payload.ok_or_else(|| km_err!(InvalidArgument, "Missing payload in CoseMac0"))?;
+        let boot_info = BootInfo::from_tagged_slice(&payload)
+            .map_err(|_e| km_err!(InvalidArgument, "Failed to CBOR-decode RootOfTrust"))?;
+        if self.boot_info.is_none() {
+            info!("Setting boot_info to TEE-provided {:?}", boot_info);
+            self.boot_info = Some(boot_info);
+        } else {
+            info!("Ignoring TEE-provided RootOfTrust {:?} as already set", boot_info);
+        }
+        Ok(())
+    }
+
+    fn convert_storage_key_to_ephemeral(&self, keyblob: &[u8]) -> Result<Vec<u8>, Error> {
+        if let Some(sk_wrapper) = self.dev.sk_wrapper {
+            // Parse and decrypt the keyblob. Note that there is no way to provide extra hidden
+            // params on the API.
+            let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(keyblob)?;
+            let hidden = tag::hidden(&[], self.root_of_trust()?)?;
+            let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
+
+            // Now that we've got the key material, use a device-specific method to re-wrap it
+            // with an ephemeral key.
+            sk_wrapper.ephemeral_wrap(&keyblob.key_material)
+        } else {
+            Err(km_err!(Unimplemented, "storage key wrapping unavailable"))
+        }
+    }
+
+    fn get_key_characteristics(
+        &self,
+        key_blob: &[u8],
+        app_id: Vec<u8>,
+        app_data: Vec<u8>,
+    ) -> Result<Vec<KeyCharacteristics>, Error> {
+        // Parse and decrypt the keyblob, which requires extra hidden params.
+        let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(key_blob)?;
+        let mut params = vec_try_with_capacity!(2)?;
+        if !app_id.is_empty() {
+            params.push(KeyParam::ApplicationId(app_id)); // capacity enough
+        }
+        if !app_data.is_empty() {
+            params.push(KeyParam::ApplicationData(app_data)); // capacity enough
+        }
+        let hidden = tag::hidden(&params, self.root_of_trust()?)?;
+        let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
+        Ok(keyblob.characteristics)
+    }
+
     /// Generate an HMAC-SHA256 value over the data using the device's HMAC key (if available).
     fn device_hmac(&self, data: &[u8]) -> Result<Vec<u8>, Error> {
         let hmac_key = match &self.hmac_key {
@@ -698,7 +930,7 @@ impl<'a> KeyMintTa<'a> {
     fn root_of_trust(&self) -> Result<&[u8], Error> {
         match &self.rot_data {
             Some(data) => Ok(data),
-            None => Err(km_err!(HardwareNotYetAvailable, "No RoT info available")),
+            None => Err(km_err!(HardwareNotYetAvailable, "No root-of-trust info available")),
         }
     }
 
