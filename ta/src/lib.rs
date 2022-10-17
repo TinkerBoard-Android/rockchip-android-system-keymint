@@ -1,6 +1,5 @@
 //! KeyMint trusted application (TA) implementation.
 
-#![allow(dead_code)] // used in later commits
 #![no_std]
 extern crate alloc;
 
@@ -31,8 +30,10 @@ use kmr_wire::{
 };
 use log::{debug, error, info, warn};
 
+mod cert;
 mod clock;
 pub mod device;
+mod keys;
 mod operation;
 mod rkp;
 mod secret;
@@ -574,6 +575,70 @@ impl<'a> KeyMintTa<'a> {
                 },
                 Err(e) => op_error_rsp(AddRngEntropyRequest::CODE, e),
             },
+            PerformOpReq::DeviceGenerateKey(req) => {
+                match self.generate_key(&req.key_params, req.attestation_key) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceGenerateKey(GenerateKeyResponse { ret })),
+                    },
+                    Err(e) => op_error_rsp(GenerateKeyRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceImportKey(req) => {
+                match self.import_key(
+                    &req.key_params,
+                    req.key_format,
+                    &req.key_data,
+                    req.attestation_key,
+                ) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceImportKey(ImportKeyResponse { ret })),
+                    },
+                    Err(e) => op_error_rsp(ImportKeyRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceImportWrappedKey(req) => {
+                match self.import_wrapped_key(
+                    &req.wrapped_key_data,
+                    &req.wrapping_key_blob,
+                    &req.masking_key,
+                    req.unwrapping_params,
+                    req.password_sid,
+                    req.biometric_sid,
+                ) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceImportWrappedKey(ImportWrappedKeyResponse {
+                            ret,
+                        })),
+                    },
+                    Err(e) => op_error_rsp(ImportWrappedKeyRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceUpgradeKey(req) => {
+                match self.upgrade_key(&req.key_blob_to_upgrade, req.upgrade_params) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceUpgradeKey(UpgradeKeyResponse { ret })),
+                    },
+                    Err(e) => op_error_rsp(UpgradeKeyRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceDeleteKey(req) => match self.delete_key(&req.key_blob) {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::DeviceDeleteKey(DeleteKeyResponse {})),
+                },
+                Err(e) => op_error_rsp(DeleteKeyRequest::CODE, e),
+            },
+            PerformOpReq::DeviceDeleteAllKeys(_req) => match self.delete_all_keys() {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::DeviceDeleteAllKeys(DeleteAllKeysResponse {})),
+                },
+                Err(e) => op_error_rsp(DeleteAllKeysRequest::CODE, e),
+            },
             PerformOpReq::DeviceDestroyAttestationIds(_req) => match self.destroy_attestation_ids()
             {
                 Ok(_ret) => PerformOpResponse {
@@ -609,6 +674,28 @@ impl<'a> KeyMintTa<'a> {
                 },
                 Err(e) => op_error_rsp(EarlyBootEndedRequest::CODE, e),
             },
+            PerformOpReq::DeviceConvertStorageKeyToEphemeral(req) => {
+                match self.convert_storage_key_to_ephemeral(&req.storage_key_blob) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceConvertStorageKeyToEphemeral(
+                            ConvertStorageKeyToEphemeralResponse { ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(ConvertStorageKeyToEphemeralRequest::CODE, e),
+                }
+            }
+            PerformOpReq::DeviceGetKeyCharacteristics(req) => {
+                match self.get_key_characteristics(&req.key_blob, req.app_id, req.app_data) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceGetKeyCharacteristics(
+                            GetKeyCharacteristicsResponse { ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(GetKeyCharacteristicsRequest::CODE, e),
+                }
+            }
             PerformOpReq::GetRootOfTrustChallenge(_req) => match self.get_root_of_trust_challenge()
             {
                 Ok(ret) => PerformOpResponse {
@@ -733,8 +820,6 @@ impl<'a> KeyMintTa<'a> {
                     Err(e) => op_error_rsp(GenerateCertificateRequestV2Request::CODE, e),
                 }
             }
-
-            _ => unimplemented!(),
         }
     }
 
@@ -794,6 +879,35 @@ impl<'a> KeyMintTa<'a> {
             key_mint_author_name: self.hw_info.author_name.to_string(),
             timestamp_token_required: self.imp.clock.is_none(),
         })
+    }
+
+    fn delete_key(&mut self, keyblob: &[u8]) -> Result<(), Error> {
+        // Parse the keyblob. It cannot be decrypted, because hidden parameters are not available
+        // (there is no `params` for them to arrive in).
+        if let Ok(keyblob::EncryptedKeyBlob::V1(encrypted_keyblob)) =
+            keyblob::EncryptedKeyBlob::new(keyblob)
+        {
+            // We have to trust that any secure deletion slot in the keyblob is valid, because the
+            // key can't be decrypted.
+            if let (Some(sdd_mgr), Some(slot)) =
+                (&mut self.dev.sdd_mgr, encrypted_keyblob.secure_deletion_slot)
+            {
+                if let Err(e) = sdd_mgr.delete_secret(slot) {
+                    error!("failed to delete secure deletion slot: {:?}", e);
+                }
+            }
+        } else {
+            error!("failed to parse keyblob, ignoring");
+        }
+        Ok(())
+    }
+
+    fn delete_all_keys(&mut self) -> Result<(), Error> {
+        if let Some(sdd_mgr) = &mut self.dev.sdd_mgr {
+            error!("secure deleting all keys! device unlikely to survive reboot!");
+            sdd_mgr.delete_all();
+        }
+        Ok(())
     }
 
     fn destroy_attestation_ids(&mut self) -> Result<(), Error> {
