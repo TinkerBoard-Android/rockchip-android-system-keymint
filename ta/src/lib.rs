@@ -31,7 +31,9 @@ use kmr_wire::{
 };
 use log::{debug, error, info, warn};
 
+mod clock;
 pub mod device;
+mod secret;
 
 struct Operation; // Placeholder for later commits.
 struct OpHandle(u64); // Placeholder for later commits.
@@ -519,6 +521,44 @@ impl<'a> KeyMintTa<'a> {
                     rsp: Some(PerformOpRsp::SetAttestationIds(SetAttestationIdsResponse {})),
                 }
             }
+
+            // ISharedSecret messages.
+            PerformOpReq::SharedSecretGetSharedSecretParameters(_req) => {
+                match self.get_shared_secret_params() {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::SharedSecretGetSharedSecretParameters(
+                            GetSharedSecretParametersResponse { ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(GetSharedSecretParametersRequest::CODE, e),
+                }
+            }
+            PerformOpReq::SharedSecretComputeSharedSecret(req) => {
+                match self.compute_shared_secret(&req.params) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::SharedSecretComputeSharedSecret(
+                            ComputeSharedSecretResponse { ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(ComputeSharedSecretRequest::CODE, e),
+                }
+            }
+
+            // ISecureClock messages.
+            PerformOpReq::SecureClockGenerateTimeStamp(req) => {
+                match self.generate_timestamp(req.challenge) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::SecureClockGenerateTimeStamp(
+                            GenerateTimeStampResponse { ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(GenerateTimeStampRequest::CODE, e),
+                }
+            }
+
             _ => unimplemented!(),
         }
     }
