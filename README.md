@@ -115,7 +115,8 @@ program that:
 - Populates initially required information (e.g. `kmr_ta::HardwareInfo`)
 - Creates a `kmr_ta::KeyMintTa` instance.
 - Configures the communication channel with the HAL service.
-- Configures the communication channel with the bootloader.
+- Configures the communication channel with the bootloader, which is required so that the current
+  root-of-trust boot information can be received.
 - Holds the main loop that:
     - reads request messages from the channel(s)
     - passes request messages to `kmr_ta::KeyMintTa::process()`, receiving a response
@@ -126,6 +127,7 @@ program that:
 - [ ] Implementation of `main` equivalent for TA, handling scheduling of incoming requests.
 - [ ] Implementation of communication channel between HAL service and TA.
 - [ ] Implementation of communication channel from bootloader to TA.
+    - [ ] Trigger call to `kmr_ta::KeyMintTa::set_boot_info` on receipt of boot info.
 
 The Cuttlefish implementation of the [KeyMint/Rust
 TA](https://cs.android.com/android/platform/superproject/+/master:device/google/cuttlefish/host/commands/secure_env_rust/secure_env.rs)
