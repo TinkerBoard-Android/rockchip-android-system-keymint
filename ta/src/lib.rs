@@ -33,10 +33,10 @@ use log::{debug, error, info, warn};
 
 mod clock;
 pub mod device;
+mod operation;
 mod secret;
 
-struct Operation; // Placeholder for later commits.
-struct OpHandle(u64); // Placeholder for later commits.
+use operation::{OpHandle, Operation};
 
 #[cfg(test)]
 mod tests;
@@ -558,6 +558,68 @@ impl<'a> KeyMintTa<'a> {
                     Err(e) => op_error_rsp(GenerateTimeStampRequest::CODE, e),
                 }
             }
+
+            // IKeyMintDevice messages.
+            PerformOpReq::DeviceBegin(req) => {
+                match self.begin_operation(req.purpose, &req.key_blob, req.params, req.auth_token) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::DeviceBegin(BeginResponse { ret })),
+                    },
+                    Err(e) => op_error_rsp(BeginRequest::CODE, e),
+                }
+            }
+
+            // IKeyMintOperation messages.
+            PerformOpReq::OperationUpdateAad(req) => match self.op_update_aad(
+                OpHandle(req.op_handle),
+                &req.input,
+                req.auth_token,
+                req.timestamp_token,
+            ) {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::OperationUpdateAad(UpdateAadResponse {})),
+                },
+                Err(e) => op_error_rsp(UpdateAadRequest::CODE, e),
+            },
+            PerformOpReq::OperationUpdate(req) => {
+                match self.op_update(
+                    OpHandle(req.op_handle),
+                    &req.input,
+                    req.auth_token,
+                    req.timestamp_token,
+                ) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::OperationUpdate(UpdateResponse { ret })),
+                    },
+                    Err(e) => op_error_rsp(UpdateRequest::CODE, e),
+                }
+            }
+            PerformOpReq::OperationFinish(req) => {
+                match self.op_finish(
+                    OpHandle(req.op_handle),
+                    req.input.as_deref(),
+                    req.signature.as_deref(),
+                    req.auth_token,
+                    req.timestamp_token,
+                    req.confirmation_token.as_deref(),
+                ) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::OperationFinish(FinishResponse { ret })),
+                    },
+                    Err(e) => op_error_rsp(FinishRequest::CODE, e),
+                }
+            }
+            PerformOpReq::OperationAbort(req) => match self.op_abort(OpHandle(req.op_handle)) {
+                Ok(_ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::OperationAbort(AbortResponse {})),
+                },
+                Err(e) => op_error_rsp(AbortRequest::CODE, e),
+            },
 
             _ => unimplemented!(),
         }
