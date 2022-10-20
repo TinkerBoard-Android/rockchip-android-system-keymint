@@ -76,4 +76,16 @@ impl<T: SerializedChannel> keymint::IRemotelyProvisionedComponent::IRemotelyProv
         *protectedData = rsp.protected_data.innto();
         Ok(rsp.ret)
     }
+    fn generateCertificateRequestV2(
+        &self,
+        keysToSign: &[keymint::MacedPublicKey::MacedPublicKey],
+        challenge: &[u8],
+    ) -> binder::Result<Vec<u8>> {
+        let rsp: GenerateCertificateRequestV2Response =
+            self.execute(GenerateCertificateRequestV2Request {
+                keys_to_sign: keysToSign.iter().map(|k| k.innto()).collect(),
+                challenge: challenge.to_vec(),
+            })?;
+        Ok(rsp.ret)
+    }
 }

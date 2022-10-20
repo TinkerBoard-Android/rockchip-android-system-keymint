@@ -386,6 +386,7 @@ KeyMintOperation = &(
     RpcGetHardwareInfo: 0x41,
     RpcGenerateEcdsaP256KeyPair: 0x42,
     RpcGenerateCertificateRequest: 0x43,
+    RpcGenerateCertificateV2Request: 0x44,
     SharedSecretGetSharedSecretParameters: 0x51,
     SharedSecretComputeSharedSecret: 0x52,
     SecureClockGenerateTimeStamp: 0x61,
@@ -531,6 +532,13 @@ GenerateCertificateRequestResponse = [
     protected_data: ProtectedData,
     ret: bstr,
 ]
+GenerateCertificateRequestV2Request = [
+    keys_to_sign: [* MacedPublicKey],
+    challenge: bstr,
+]
+GenerateCertificateRequestV2Response = [
+    ret: bstr,
+]
 GetSharedSecretParametersRequest = []
 GetSharedSecretParametersResponse = [
     ret: SharedSecretParameters,
@@ -569,6 +577,7 @@ PerformOpReq = &(
     [RpcGetHardwareInfo, GetRpcHardwareInfoRequest],
     [RpcGenerateEcdsaP256KeyPair, GenerateEcdsaP256KeyPairRequest],
     [RpcGenerateCertificateRequest, GenerateCertificateRequestRequest],
+    [RpcGenerateCertificateV2Request, GenerateCertificateRequestV2Request],
     [SharedSecretGetSharedSecretParameters, GetSharedSecretParametersRequest],
     [SharedSecretComputeSharedSecret, ComputeSharedSecretRequest],
     [SecureClockGenerateTimeStamp, GenerateTimeStampRequest],
@@ -601,6 +610,7 @@ PerformOpRsp = &(
     [RpcGetHardwareInfo, GetRpcHardwareInfoResponse],
     [RpcGenerateEcdsaP256KeyPair, GenerateEcdsaP256KeyPairResponse],
     [RpcGenerateCertificateRequest, GenerateCertificateRequestResponse],
+    [RpcGenerateCertificateV2Request, GenerateCertificateRequestV2Response],
     [SharedSecretGetSharedSecretParameters, GetSharedSecretParametersResponse],
     [SharedSecretComputeSharedSecret, ComputeSharedSecretResponse],
     [SecureClockGenerateTimeStamp, GenerateTimeStampResponse],
