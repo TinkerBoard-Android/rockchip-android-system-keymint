@@ -274,6 +274,15 @@ pub struct GenerateCertificateRequestResponse {
     pub protected_data: ProtectedData,
     pub ret: Vec<u8>,
 }
+#[derive(Debug, AsCborValue)]
+pub struct GenerateCertificateRequestV2Request {
+    pub keys_to_sign: Vec<MacedPublicKey>,
+    pub challenge: Vec<u8>,
+}
+#[derive(Debug, AsCborValue)]
+pub struct GenerateCertificateRequestV2Response {
+    pub ret: Vec<u8>,
+}
 
 // ISharedSecret methods.
 #[derive(Debug, AsCborValue)]
@@ -583,6 +592,7 @@ declare_req_rsp_enums! { KeyMintOperation  =>    (PerformOpReq, PerformOpRsp) {
     RpcGetHardwareInfo = 0x41 =>                       (GetRpcHardwareInfoRequest, GetRpcHardwareInfoResponse),
     RpcGenerateEcdsaP256KeyPair = 0x42 =>              (GenerateEcdsaP256KeyPairRequest, GenerateEcdsaP256KeyPairResponse),
     RpcGenerateCertificateRequest = 0x43 =>            (GenerateCertificateRequestRequest, GenerateCertificateRequestResponse),
+    RpcGenerateCertificateV2Request = 0x44 =>          (GenerateCertificateRequestV2Request, GenerateCertificateRequestV2Response),
     SharedSecretGetSharedSecretParameters = 0x51 =>    (GetSharedSecretParametersRequest, GetSharedSecretParametersResponse),
     SharedSecretComputeSharedSecret = 0x52 =>          (ComputeSharedSecretRequest, ComputeSharedSecretResponse),
     SecureClockGenerateTimeStamp = 0x61 =>             (GenerateTimeStampRequest, GenerateTimeStampResponse),

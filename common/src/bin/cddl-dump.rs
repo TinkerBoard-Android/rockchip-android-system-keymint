@@ -103,6 +103,8 @@ fn main() {
     show_schema::<GenerateEcdsaP256KeyPairResponse>();
     show_schema::<GenerateCertificateRequestRequest>();
     show_schema::<GenerateCertificateRequestResponse>();
+    show_schema::<GenerateCertificateRequestV2Request>();
+    show_schema::<GenerateCertificateRequestV2Response>();
 
     show_schema::<GetSharedSecretParametersRequest>();
     show_schema::<GetSharedSecretParametersResponse>();
