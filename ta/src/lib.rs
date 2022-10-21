@@ -38,6 +38,7 @@ mod operation;
 mod rkp;
 mod secret;
 
+use keys::KeyImport;
 use operation::{OpHandle, Operation};
 
 #[cfg(test)]
@@ -590,6 +591,7 @@ impl<'a> KeyMintTa<'a> {
                     req.key_format,
                     &req.key_data,
                     req.attestation_key,
+                    KeyImport::NonWrapped,
                 ) {
                     Ok(ret) => PerformOpResponse {
                         error_code: ErrorCode::Ok,
@@ -603,7 +605,7 @@ impl<'a> KeyMintTa<'a> {
                     &req.wrapped_key_data,
                     &req.wrapping_key_blob,
                     &req.masking_key,
-                    req.unwrapping_params,
+                    &req.unwrapping_params,
                     req.password_sid,
                     req.biometric_sid,
                 ) {
