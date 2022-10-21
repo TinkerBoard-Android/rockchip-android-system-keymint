@@ -34,6 +34,7 @@ use log::{debug, error, info, warn};
 mod clock;
 pub mod device;
 mod operation;
+mod rkp;
 mod secret;
 
 use operation::{OpHandle, Operation};
@@ -620,6 +621,53 @@ impl<'a> KeyMintTa<'a> {
                 },
                 Err(e) => op_error_rsp(AbortRequest::CODE, e),
             },
+
+            // IRemotelyProvisionedComponentOperation messages.
+            PerformOpReq::RpcGetHardwareInfo(_req) => match self.get_rpc_hardware_info() {
+                Ok(ret) => PerformOpResponse {
+                    error_code: ErrorCode::Ok,
+                    rsp: Some(PerformOpRsp::RpcGetHardwareInfo(GetRpcHardwareInfoResponse { ret })),
+                },
+                Err(e) => op_error_rsp(GetRpcHardwareInfoRequest::CODE, e),
+            },
+            PerformOpReq::RpcGenerateEcdsaP256KeyPair(req) => {
+                match self.generate_ecdsa_p256_keypair(req.test_mode) {
+                    Ok((pubkey, ret)) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::RpcGenerateEcdsaP256KeyPair(
+                            GenerateEcdsaP256KeyPairResponse { maced_public_key: pubkey, ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(GenerateEcdsaP256KeyPairRequest::CODE, e),
+                }
+            }
+            PerformOpReq::RpcGenerateCertificateRequest(req) => {
+                match self.generate_cert_req(
+                    req.test_mode,
+                    req.keys_to_sign,
+                    &req.endpoint_encryption_cert_chain,
+                    &req.challenge,
+                ) {
+                    Ok((device_info, protected_data, ret)) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::RpcGenerateCertificateRequest(
+                            GenerateCertificateRequestResponse { device_info, protected_data, ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(GenerateCertificateRequestRequest::CODE, e),
+                }
+            }
+            PerformOpReq::RpcGenerateCertificateV2Request(req) => {
+                match self.generate_cert_req_v2(req.keys_to_sign, &req.challenge) {
+                    Ok(ret) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::RpcGenerateCertificateV2Request(
+                            GenerateCertificateRequestV2Response { ret },
+                        )),
+                    },
+                    Err(e) => op_error_rsp(GenerateCertificateRequestV2Request::CODE, e),
+                }
+            }
 
             _ => unimplemented!(),
         }
