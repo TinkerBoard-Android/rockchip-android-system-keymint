@@ -336,7 +336,7 @@ pub struct SetBootInfoRequest {
 pub struct SetBootInfoResponse {}
 
 /// Attestation ID information.
-#[derive(Clone, Debug, AsCborValue)]
+#[derive(Clone, Debug, AsCborValue, PartialEq, Eq)]
 pub struct AttestationIdInfo {
     // The following fields are byte vectors that typically hold UTF-8 string data.
     pub brand: Vec<u8>,
