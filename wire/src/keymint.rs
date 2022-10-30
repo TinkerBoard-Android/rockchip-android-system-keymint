@@ -50,6 +50,33 @@ impl TryFrom<i32> for VerifiedBootState {
     }
 }
 
+/// Information provided once at start-of-day, normally by the bootloader.
+///
+/// Field order is fixed, to match the CBOR type definition of `RootOfTrust` in `IKeyMintDevice`.
+#[derive(Clone, Debug, AsCborValue, PartialEq, Eq)]
+pub struct BootInfo {
+    pub verified_boot_key: [u8; 32],
+    pub device_boot_locked: bool,
+    pub verified_boot_state: VerifiedBootState,
+    pub verified_boot_hash: [u8; 32],
+    pub boot_patchlevel: u32, // YYYYMMDD format
+}
+
+// Implement the `coset` CBOR serialization traits in terms of the local `AsCborValue` trait,
+// in order to get access to tagged versions of serialize/deserialize.
+impl coset::AsCborValue for BootInfo {
+    fn from_cbor_value(value: cbor::value::Value) -> coset::Result<Self> {
+        <Self as AsCborValue>::from_cbor_value(value).map_err(|e| e.into())
+    }
+    fn to_cbor_value(self) -> coset::Result<cbor::value::Value> {
+        <Self as AsCborValue>::to_cbor_value(self).map_err(|e| e.into())
+    }
+}
+
+impl coset::TaggedCborSerializable for BootInfo {
+    const TAG: u64 = 40001;
+}
+
 /// Representation of a date/time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateTime {
