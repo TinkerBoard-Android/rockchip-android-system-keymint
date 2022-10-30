@@ -77,71 +77,23 @@ macro_rules! vec_try_with_capacity {
     }
 }
 
-/// Macro that mimics `vec![<val>; <len>]` but which detects allocation failure.
+/// Macro that mimics `vec!` but which detects allocation failure.
 #[macro_export]
 macro_rules! vec_try {
     { $elem:expr ; $len:expr } => {
-        {
-            let mut v = alloc::vec::Vec::new();
-            v.try_reserve($len).map_err(|_e| $crate::alloc_err!($len))?;
-            v.resize($len, $elem);
-            Result::<_, $crate::Error>::Ok(v)
-        }
+        kmr_wire::vec_try_fill_with_alloc_err($elem, $len, || $crate::alloc_err!($len))
     };
-    // Implement equivalents to `vec![a1, a2, a3, .. , aN]` for small values of N.
     { $x1:expr, $x2:expr, $x3:expr, $x4:expr $(,)? } => {
-        {
-            let mut v = alloc::vec::Vec::new();
-            match v.try_reserve(4) {
-                Err(_e) => Err($crate::alloc_err!(4)),
-                Ok(_) => {
-                    v.push($x1);
-                    v.push($x2);
-                    v.push($x3);
-                    v.push($x4);
-                    Ok(v)
-                }
-            }
-        }
+        kmr_wire::vec_try4_with_alloc_err($x1, $x2, $x3, $x4, || $crate::alloc_err!(4))
     };
     { $x1:expr, $x2:expr, $x3:expr $(,)? } => {
-        {
-            let mut v = alloc::vec::Vec::new();
-            match v.try_reserve(3) {
-                Err(_e) => Err($crate::alloc_err!(3)),
-                Ok(_) => {
-                    v.push($x1);
-                    v.push($x2);
-                    v.push($x3);
-                    Ok(v)
-                }
-            }
-        }
+        kmr_wire::vec_try3_with_alloc_err($x1, $x2, $x3, || $crate::alloc_err!(3))
     };
     { $x1:expr, $x2:expr $(,)? } => {
-        {
-            let mut v = alloc::vec::Vec::new();
-            match v.try_reserve(2) {
-                Err(_e) => Err($crate::alloc_err!(2)),
-                Ok(_) => {
-                    v.push($x1);
-                    v.push($x2);
-                    Ok(v)
-                }
-            }
-        }
+        kmr_wire::vec_try2_with_alloc_err($x1, $x2, || $crate::alloc_err!(2))
     };
     { $x1:expr $(,)? } => {
-        {
-            let mut v = alloc::vec::Vec::new();
-            match v.try_reserve(1) {
-                Err(_e) => Err($crate::alloc_err!(1)),
-                Ok(_) => {
-                    v.push($x1);
-                    Ok(v)
-                }
-            }
-        }
+        kmr_wire::vec_try1_with_alloc_err($x1, || $crate::alloc_err!(1))
     };
 }
 
