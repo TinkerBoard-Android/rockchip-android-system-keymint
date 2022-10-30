@@ -69,7 +69,7 @@ pub enum CurveType {
 }
 
 /// Raw key material used for deriving other keys.
-#[derive(ZeroizeOnDrop)]
+#[derive(PartialEq, Eq, ZeroizeOnDrop)]
 pub struct RawKeyMaterial(pub Vec<u8>);
 
 /// Opaque key material whose structure is only known/accessible to the crypto implementation.
