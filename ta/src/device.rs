@@ -35,8 +35,16 @@ pub struct Implementation<'a> {
 /// Retrieval of key material.  The caller is expected to drop the key material as soon as it is
 /// done with it.
 pub trait RetrieveKeyMaterial {
-    /// Retrieve the root key used for derivation of a per-keyblob key encryption key (KEK).
-    fn root_kek(&self) -> RawKeyMaterial;
+    /// Retrieve the root key used for derivation of a per-keyblob key encryption key (KEK), passing
+    /// in any opaque context.
+    fn root_kek(&self, context: &[u8]) -> RawKeyMaterial;
+
+    /// Retrieve any opaque (but non-confidential) context needed for future calls to [`root_kek`].
+    /// Context should not include confidential data (it will be stored in the clear).
+    fn kek_context(&self) -> Vec<u8> {
+        // Default implementation is to have an empty KEK retrieval context.
+        Vec::new()
+    }
 
     /// Retrieve the key agreement key used for shared secret negotiation.
     fn kak(&self) -> aes::Key;
