@@ -930,6 +930,7 @@ pub fn raw_tag_value(tag: Tag) -> u32 {
     (tag as u32) & 0x0fffffffu32
 }
 
+// TODO: make this a derive macro on Tag?
 pub fn from_raw_tag_value(raw_tag: u32) -> Tag {
     match raw_tag {
         x if x == raw_tag_value(Tag::Purpose) => Tag::Purpose,

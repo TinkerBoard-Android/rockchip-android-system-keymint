@@ -21,6 +21,9 @@ use log::{error, warn};
 use spki::SubjectPublicKeyInfo;
 use x509_cert::ext::pkix::KeyUsages;
 
+/// Maximum size of an attestation challenge value.
+const MAX_ATTESTATION_CHALLENGE_LEN: usize = 128;
+
 /// Contents of wrapping key data
 ///
 /// ```asn1
@@ -174,6 +177,7 @@ impl<'a> crate::KeyMintTa<'a> {
             &key_usage_ext_val,
             basic_constraints_ext_val.as_deref(),
             attest_ext_val.as_deref(),
+            tag::characteristics_at(chars, self.hw_info.security_level)?,
             params,
         )?;
         let tbs_data = cert::asn1_der_encode(&tbs_cert)?;
@@ -335,6 +339,13 @@ impl<'a> crate::KeyMintTa<'a> {
 
             let signing_info = if let Some(attest_challenge) = attest_challenge {
                 // Attestation requested.
+                if attest_challenge.len() > MAX_ATTESTATION_CHALLENGE_LEN {
+                    return Err(km_err!(
+                        InvalidInputLength,
+                        "attestation challenge too large: {} bytes",
+                        attest_challenge.len()
+                    ));
+                }
                 let attest_app_id = get_opt_tag_value!(params, AttestationApplicationId)?
                     .ok_or_else(|| {
                         km_err!(AttestationApplicationIdMissing, "attestation requested")
@@ -458,7 +469,6 @@ impl<'a> crate::KeyMintTa<'a> {
         password_sid: i64,
         biometric_sid: i64,
     ) -> Result<KeyCreationResult, Error> {
-
         // Decrypt the wrapping key blob
         let encrypted_wrapping_key_blob = keyblob::EncryptedKeyBlob::new(wrapping_key_blob)?;
         let hidden_params = tag::hidden(unwrapping_params, self.root_of_trust()?)?;
@@ -477,7 +487,7 @@ impl<'a> crate::KeyMintTa<'a> {
             KeyMaterial::Rsa(key) => {
                 // Check the requirements on the wrapping key characterisitcs
                 let decrypt_mode = tag::check_rsa_wrapping_key_params(
-                    keyblob::characteristics_at(&characteristics, self.hw_info.security_level)?,
+                    tag::characteristics_at(&characteristics, self.hw_info.security_level)?,
                     unwrapping_params,
                 )?;
 
@@ -504,7 +514,8 @@ impl<'a> crate::KeyMintTa<'a> {
         let unmasked_transport_key: Vec<u8> =
             masked_transport_key.iter().zip(masking_key).map(|(x, y)| x ^ y).collect();
 
-        let aes_transport_key = aes::Key::Aes256(unmasked_transport_key.try_into().map_err(|_e| {
+        let aes_transport_key =
+            aes::Key::Aes256(unmasked_transport_key.try_into().map_err(|_e| {
                 km_err!(
                     InvalidArgument,
                     "transport key len {} not correct for AES-256 key",

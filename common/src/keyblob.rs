@@ -1,6 +1,8 @@
 //! Key blob manipulation functionality.
 
-use crate::{contains_tag_value, crypto, km_err, try_to_vec, vec_try, Error, FallibleAllocExt};
+use crate::{
+    contains_tag_value, crypto, km_err, tag, try_to_vec, vec_try, Error, FallibleAllocExt,
+};
 use alloc::{
     format,
     string::{String, ToString},
@@ -228,31 +230,10 @@ pub struct PlaintextKeyBlob {
     pub key_material: crypto::KeyMaterial,
 }
 
-/// Return the set of key parameters at the provided security level.
-pub fn characteristics_at(
-    chars: &[KeyCharacteristics],
-    sec_level: SecurityLevel,
-) -> Result<&[KeyParam], Error> {
-    let mut result: Option<&[KeyParam]> = None;
-    for chars in chars {
-        if chars.security_level != sec_level {
-            continue;
-        }
-        if result.is_none() {
-            result = Some(&chars.authorizations);
-        } else {
-            return Err(km_err!(InvalidKeyBlob, "multiple key characteristics at {:?}", sec_level));
-        }
-    }
-    result.ok_or_else(|| {
-        km_err!(InvalidKeyBlob, "no parameters at security level {:?} found", sec_level)
-    })
-}
-
 impl PlaintextKeyBlob {
     /// Return the set of key parameters at the provided security level.
     pub fn characteristics_at(&self, sec_level: SecurityLevel) -> Result<&[KeyParam], Error> {
-        characteristics_at(&self.characteristics, sec_level)
+        tag::characteristics_at(&self.characteristics, sec_level)
     }
 
     /// Check that the key is suitable for the given purpose.

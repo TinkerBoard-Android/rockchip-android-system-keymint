@@ -169,7 +169,7 @@ impl<'a> crate::KeyMintTa<'a> {
 
         // Validate parameters.
         let key_chars =
-            kmr_common::keyblob::characteristics_at(&characteristics, self.hw_info.security_level)?;
+            kmr_common::tag::characteristics_at(&characteristics, self.hw_info.security_level)?;
         tag::check_begin_params(key_chars, purpose, &params)?;
         self.check_begin_auths(key_chars, key_blob)?;
 

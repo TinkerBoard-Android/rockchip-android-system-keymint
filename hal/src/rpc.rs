@@ -19,7 +19,6 @@ impl<T: SerializedChannel + 'static> Device<T> {
     }
 
     /// Create a new instance wrapped in a proxy object.
-    #[cfg(soong)]
     pub fn new_as_binder(
         channel: Arc<Mutex<T>>,
     ) -> binder::Strong<dyn keymint::IRemotelyProvisionedComponent::IRemotelyProvisionedComponent>
