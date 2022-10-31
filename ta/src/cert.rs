@@ -57,6 +57,7 @@ pub(crate) fn tbs_certificate<'a>(
     key_usage_ext_bits: &'a [u8],
     basic_constraint_ext_val: Option<&'a [u8]>,
     attestation_ext: Option<&'a [u8]>,
+    chars: &'a [KeyParam],
     params: &'a [KeyParam],
 ) -> Result<TbsCertificate<'a>, Error> {
     let cert_serial = tag::get_cert_serial(params)?;
@@ -79,7 +80,7 @@ pub(crate) fn tbs_certificate<'a>(
             match tag::get_algorithm(params)? {
                 keymint::Algorithm::Rsa => crypto::rsa::SHA256_PKCS1_SIGNATURE_OID,
                 keymint::Algorithm::Ec => {
-                    crypto::ec::curve_to_signing_oid(tag::get_ec_curve(params)?)
+                    crypto::ec::curve_to_signing_oid(tag::get_ec_curve(chars)?)
                 }
                 alg => {
                     return Err(km_err!(
@@ -127,14 +128,8 @@ pub(crate) fn tbs_certificate<'a>(
         signature: AlgorithmIdentifier { oid: sig_alg_oid, parameters: None },
         issuer: RdnSequence::from_der(cert_issuer)?,
         validity: x509_cert::time::Validity {
-            not_before: validity_time_from_duration(Duration::from_millis(
-                u64::try_from(not_before.ms_since_epoch)
-                    .map_err(|_| Error::Der(ErrorKind::DateTime))?,
-            ))?,
-            not_after: validity_time_from_duration(Duration::from_millis(
-                u64::try_from(not_after.ms_since_epoch)
-                    .map_err(|_| Error::Der(ErrorKind::DateTime))?,
-            ))?,
+            not_before: validity_time_from_datetime(not_before)?,
+            not_after: validity_time_from_datetime(not_after)?,
         },
         subject: RdnSequence::from_der(cert_subject)?,
         subject_public_key_info: spki,
@@ -156,15 +151,25 @@ pub(crate) fn extract_subject(cert: &keymint::Certificate) -> Result<Vec<u8>, Er
     Ok(subject_data)
 }
 
-/// Construct x.509-cert::time::Time from Duration.
+/// Construct x.509-cert::time::Time from `DateTime`.
 /// RFC 5280 section 4.1.2.5 requires that UtcTime is used up to 2049
 /// and GeneralizedTime from 2050 onwards
-fn validity_time_from_duration(duration: Duration) -> Result<Time, Error> {
-    const MAX_UTC_TIME: Duration = Duration::from_secs(2524608000); // 2050-01-01T00:00:00Z
-    if duration >= MAX_UTC_TIME {
-        Ok(Time::GeneralTime(GeneralizedTime::from_unix_duration(duration)?))
+fn validity_time_from_datetime(when: DateTime) -> Result<Time, Error> {
+    let dt_err = |_| Error::Der(ErrorKind::DateTime);
+    let secs_since_epoch: i64 = when.ms_since_epoch / 1000;
+
+    if when.ms_since_epoch >= 0 {
+        const MAX_UTC_TIME: Duration = Duration::from_secs(2524608000); // 2050-01-01T00:00:00Z
+
+        let duration = Duration::from_secs(u64::try_from(secs_since_epoch).map_err(dt_err)?);
+        if duration >= MAX_UTC_TIME {
+            Ok(Time::GeneralTime(GeneralizedTime::from_unix_duration(duration)?))
+        } else {
+            Ok(Time::UtcTime(UtcTime::from_unix_duration(duration)?))
+        }
     } else {
-        Ok(Time::UtcTime(UtcTime::from_unix_duration(duration)?))
+        // TODO: cope with negative offsets from Unix Epoch.
+        Ok(Time::GeneralTime(GeneralizedTime::from_unix_duration(Duration::from_secs(0))?))
     }
 }
 
@@ -181,11 +186,12 @@ pub(crate) fn key_usage_extension_bits(params: &[KeyParam]) -> KeyUsage {
     for param in params {
         if let KeyParam::Purpose(purpose) = param {
             match purpose {
-                KeyPurpose::Sign => {
+                KeyPurpose::Sign | KeyPurpose::Verify => {
                     key_usage_bits |= KeyUsages::DigitalSignature;
                 }
-                KeyPurpose::Decrypt => {
+                KeyPurpose::Decrypt | KeyPurpose::Encrypt => {
                     key_usage_bits |= KeyUsages::DataEncipherment;
+                    key_usage_bits |= KeyUsages::KeyEncipherment;
                 }
                 KeyPurpose::WrapKey => {
                     key_usage_bits |= KeyUsages::KeyEncipherment;
@@ -196,7 +202,6 @@ pub(crate) fn key_usage_extension_bits(params: &[KeyParam]) -> KeyUsage {
                 KeyPurpose::AttestKey => {
                     key_usage_bits |= KeyUsages::KeyCertSign;
                 }
-                KeyPurpose::Encrypt | KeyPurpose::Verify => {}
             }
         }
     }

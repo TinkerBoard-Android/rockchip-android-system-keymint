@@ -38,3 +38,25 @@ rust_library_host {
         "libkmr_derive",
     ],
 }
+
+rust_test_host {
+    name: "libkmr_ta_test",
+    crate_name: "kmr_ta_test",
+    srcs: ["src/lib.rs"],
+    edition: "2021",
+    rustlibs: [
+        "libciborium",
+        "libciborium_io",
+        "libder",
+        "libflagset",
+        "libkmr_common",
+        "libkmr_wire",
+        "liblog_rust",
+        "libspki",
+        "libx509_cert"
+    ],
+    proc_macros: [
+        "libkmr_derive",
+    ],
+    test_suites: ["general-tests"],
+}
