@@ -3,7 +3,7 @@
 use crate::{km_err, try_to_vec, Error, FallibleAllocExt};
 use alloc::vec::Vec;
 use der::{AnyRef, Decode};
-use kmr_wire::{coset, keymint::EcCurve};
+use kmr_wire::{coset, keymint::EcCurve, KeySizeInBits};
 use spki::{AlgorithmIdentifier, SubjectPublicKeyInfo};
 use zeroize::ZeroizeOnDrop;
 
@@ -411,4 +411,15 @@ pub fn curve_to_signing_oid(curve: EcCurve) -> pkcs8::ObjectIdentifier {
         EcCurve::P224 | EcCurve::P256 | EcCurve::P384 | EcCurve::P521 => ECDSA_SHA256_SIGNATURE_OID,
         EcCurve::Curve25519 => X509_ED25519_OID,
     }
+}
+
+/// Return the key size for a curve.
+pub fn curve_to_key_size(curve: EcCurve) -> KeySizeInBits {
+    KeySizeInBits(match curve {
+        EcCurve::P224 => 224,
+        EcCurve::P256 => 256,
+        EcCurve::P384 => 384,
+        EcCurve::P521 => 521,
+        EcCurve::Curve25519 => 256,
+    })
 }
