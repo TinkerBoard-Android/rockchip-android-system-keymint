@@ -268,7 +268,7 @@ impl<'a> KeyMintTa<'a> {
         encrypted_keyblob: keyblob::EncryptedKeyBlob,
         hidden: Vec<KeyParam>,
     ) -> Result<keyblob::PlaintextKeyBlob, Error> {
-        let root_kek = self.root_kek(encrypted_keyblob.kek_context());
+        let root_kek = self.root_kek(encrypted_keyblob.kek_context())?;
         let keyblob = keyblob::decrypt(
             match &self.dev.sdd_mgr {
                 None => None,
@@ -1062,7 +1062,7 @@ impl<'a> KeyMintTa<'a> {
     }
 
     /// Return the root key used for key encryption.
-    fn root_kek(&self, context: &[u8]) -> RawKeyMaterial {
+    fn root_kek(&self, context: &[u8]) -> Result<RawKeyMaterial, Error> {
         self.dev.keys.root_kek(context)
     }
 

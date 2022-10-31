@@ -428,8 +428,8 @@ impl<'a> crate::KeyMintTa<'a> {
         }
 
         // Now build the keyblob.
-        let kek_context = self.dev.keys.kek_context();
-        let root_kek = self.root_kek(&kek_context);
+        let kek_context = self.dev.keys.kek_context()?;
+        let root_kek = self.root_kek(&kek_context)?;
         let hidden = tag::hidden(params, self.root_of_trust()?)?;
         let encrypted_keyblob = keyblob::encrypt(
             self.hw_info.security_level,
@@ -715,8 +715,8 @@ impl<'a> crate::KeyMintTa<'a> {
         }
 
         // Now re-build the keyblob. Use a potentially fresh key encryption key.
-        let kek_context = self.dev.keys.kek_context();
-        let root_kek = self.root_kek(&kek_context);
+        let kek_context = self.dev.keys.kek_context()?;
+        let root_kek = self.root_kek(&kek_context)?;
         let hidden = tag::hidden(&upgrade_params, self.root_of_trust()?)?;
         let encrypted_keyblob = keyblob::encrypt(
             self.hw_info.security_level,
