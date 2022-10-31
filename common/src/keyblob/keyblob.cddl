@@ -25,6 +25,7 @@ Version = &(
 EncryptedKeyBlobV1 = [
     characteristics: [* KeyCharacteristics],
     key_derivation_input: bstr .size 32,
+    kek_context: bstr,
     encrypted_key_material: #6.16(Cose_Encrypt0),
     secure_deletion_slot: [? SecureDeletionSlot],
 ]
