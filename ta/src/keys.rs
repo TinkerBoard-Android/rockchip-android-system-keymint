@@ -1,6 +1,7 @@
 //! TA functionality related to key generation/import/upgrade.
 
-use crate::{cert, device};
+use crate::{cert, device, AttestationChainInfo};
+use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::{borrow::Borrow, convert::TryFrom};
@@ -88,42 +89,29 @@ impl<'a> crate::KeyMintTa<'a> {
     /// Retrieve the signing information.
     pub(crate) fn get_signing_info(
         &self,
-        key_type: device::SigningKey,
+        key_type: device::SigningKeyType,
     ) -> Result<SigningInfo<'a>, Error> {
-        let (chain, issuer) = match key_type {
-            device::SigningKey::Batch => (&self.batch_chain, &self.batch_issuer),
-            device::SigningKey::DeviceUnique => {
-                (&self.device_unique_chain, &self.device_unique_issuer)
+        // Retrieve the chain and issuer information, which is cached after first retrieval.
+        let mut attestation_chain_info = self.attestation_chain_info.borrow_mut();
+        let chain_info = match attestation_chain_info.entry(key_type) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => {
+                // Retrieve and store the cert chain information (as this is public).
+                let chain = self.dev.sign_info.cert_chain(key_type)?;
+                let issuer = cert::extract_subject(
+                    chain.get(0).ok_or_else(|| km_err!(UnknownError, "empty attestation chain"))?,
+                )?;
+                e.insert(AttestationChainInfo { chain, issuer })
             }
         };
-        if chain.borrow().is_none() {
-            // Retrieve and store the cert chain information (as this is public).
-            let dev_chain = self.dev.sign_info.cert_chain(key_type)?;
-            let issuer_data = cert::extract_subject(
-                dev_chain.get(0).ok_or_else(|| km_err!(UnknownError, "empty attestation chain"))?,
-            )?;
-            *chain.borrow_mut() = Some(dev_chain);
-            *issuer.borrow_mut() = Some(issuer_data);
-        }
+
         // Retrieve the signing key information (which will be dropped when signing is done).
         let signing_key = self.dev.sign_info.signing_key(key_type)?;
         Ok(SigningInfo {
             attestation_info: None,
             signing_key,
-            issuer_subject: issuer
-                .borrow()
-                .as_ref()
-                .ok_or_else(|| {
-                    km_err!(AttestationKeysNotProvisioned, "no attestation chain available")
-                })?
-                .clone(),
-            chain: chain
-                .borrow()
-                .as_ref()
-                .ok_or_else(|| {
-                    km_err!(AttestationKeysNotProvisioned, "no attestation chain available")
-                })?
-                .clone(),
+            issuer_subject: chain_info.issuer.clone(),
+            chain: chain_info.chain.clone(),
         })
     }
 
@@ -376,7 +364,7 @@ impl<'a> crate::KeyMintTa<'a> {
                 } else {
                     // Need to use a device key for attestation. Look up the relevant device key and
                     // chain.
-                    let key_type = match (
+                    let which_key = match (
                         get_bool_tag_value!(params, DeviceUniqueAttestation)?,
                         self.is_strongbox(),
                     ) {
@@ -389,8 +377,16 @@ impl<'a> crate::KeyMintTa<'a> {
                             ))
                         }
                     };
+                    // Provide an indication of what's going to be signed, to allow the
+                    // implementation to switch between EC and RSA signing keys if it so chooses.
+                    let algo_hint = match &keyblob.key_material {
+                        crypto::KeyMaterial::Rsa(_) => device::SigningAlgorithm::Rsa,
+                        crypto::KeyMaterial::Ec(_, _, _) => device::SigningAlgorithm::Ec,
+                        _ => return Err(km_err!(InvalidArgument, "unexpected key type!")),
+                    };
 
-                    let mut info = self.get_signing_info(key_type)?;
+                    let mut info = self
+                        .get_signing_info(device::SigningKeyType { which: which_key, algo_hint })?;
                     info.attestation_info = attestation_info;
                     Some(info)
                 }
