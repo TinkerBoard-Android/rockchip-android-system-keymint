@@ -434,3 +434,45 @@ fn cddl_struct(name: &Ident, data: &Data) -> TokenStream {
         Data::Union(_) => unimplemented!(),
     }
 }
+
+/// Derive macro that implements a `from_raw_tag_value` method for the `Tag` enum.
+#[proc_macro_derive(FromRawTag)]
+pub fn derive_from_raw_tag(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    derive_from_raw_tag_internal(&input)
+}
+
+fn derive_from_raw_tag_internal(input: &DeriveInput) -> proc_macro::TokenStream {
+    let name = &input.ident;
+    let from_val = from_raw_tag(name, &input.data);
+    let expanded = quote! {
+        pub fn from_raw_tag_value(raw_tag: u32) -> #name {
+            #from_val
+        }
+    };
+    expanded.into()
+}
+
+/// Generate an expression to convert a `u32` into an instance of an fieldless enum.
+/// Assumes the existence of an `Invalid` variant as a fallback, and assumes that a
+/// `raw_tag_value` function is in scope.
+fn from_raw_tag(name: &Ident, data: &Data) -> TokenStream {
+    match data {
+        Data::Enum(enum_data) => {
+            let recurse = enum_data.variants.iter().map(|variant| {
+                let vname = &variant.ident;
+                quote_spanned! {variant.span()=>
+                                x if x == raw_tag_value(#name::#vname) => #name::#vname,
+                }
+            });
+
+            quote! {
+                match raw_tag {
+                    #(#recurse)*
+                    _ => #name::Invalid,
+                }
+            }
+        }
+        _ => unimplemented!(),
+    }
+}
