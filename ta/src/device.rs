@@ -61,7 +61,7 @@ pub trait RetrieveKeyMaterial {
 }
 
 /// Identification of which attestation signing key is required.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SigningKey {
     /// Use a batch key that is shared across multiple devices (to prevent the keys being used as
     /// device identifiers).
@@ -70,11 +70,29 @@ pub enum SigningKey {
     DeviceUnique,
 }
 
+/// Indication of preferred attestation signing algorithm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SigningAlgorithm {
+    Ec,
+    Rsa,
+}
+
+/// Indication of required signing key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SigningKeyType {
+    pub which: SigningKey,
+    /// Indicates what is going to be signed, to allow implementations to (optionally) use EC / RSA
+    /// signing keys for EC / RSA keys respectively.
+    pub algo_hint: SigningAlgorithm,
+}
+
 /// Retrieval of attestation certificate signing information.  The caller is expected to drop key
 /// material after use, but may cache public key material.
 pub trait RetrieveCertSigningInfo {
-    /// Return the signing key material for the specified `key_type`.
-    fn signing_key(&self, key_type: SigningKey) -> Result<KeyMaterial, Error>;
+    /// Return the signing key material for the specified `key_type`.  The `algo_hint` parameter
+    /// indicates what is going to be signed, to allow implementations to (optionally) use EC / RSA
+    /// signing keys for EC /RSA keys respectively.
+    fn signing_key(&self, key_type: SigningKeyType) -> Result<KeyMaterial, Error>;
 
     /// Return the certificate chain associated with the specified signing key, where:
     /// - `chain[0]` holds the public key that corresponds to `signing_key`, and which is signed
@@ -82,7 +100,7 @@ pub trait RetrieveCertSigningInfo {
     /// - the keypair described by the second entry `chain[1]`, which in turn is signed by...
     /// - ...
     /// - the final certificate in the chain should be a self-signed cert holding a Google root.
-    fn cert_chain(&self, key_type: SigningKey) -> Result<Vec<keymint::Certificate>, Error>;
+    fn cert_chain(&self, key_type: SigningKeyType) -> Result<Vec<keymint::Certificate>, Error>;
 }
 
 /// Retrieval of attestation ID information.  This information will not change (so the caller can

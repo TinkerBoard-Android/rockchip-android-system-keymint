@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::{
+    collections::BTreeMap,
     format,
     rc::Rc,
     string::{String, ToString},
@@ -59,6 +60,15 @@ struct UseCount {
     count: u64,
 }
 
+/// Attestation chain information.
+struct AttestationChainInfo {
+    /// Chain of certificates from intermediate to root.
+    chain: Vec<keymint::Certificate>,
+    /// Subject field from the first certificate in the chain, as an ASN.1 DER encoded `Name` (cf
+    /// RFC 5280 s4.1.2.4).
+    issuer: Vec<u8>,
+}
+
 /// KeyMint device implementation, running in secure environment.
 pub struct KeyMintTa<'a> {
     /**
@@ -90,13 +100,7 @@ pub struct KeyMintTa<'a> {
     hal_info: Option<HalInfo>,
 
     /// Attestation chain information, retrieved on first use.
-    batch_chain: RefCell<Option<Vec<keymint::Certificate>>>,
-    device_unique_chain: RefCell<Option<Vec<keymint::Certificate>>>,
-
-    /// Subject field from the first certificate in the chain, as an ASN.1 DER encoded `Name` (cf
-    /// RFC 5280 s4.1.2.4); retrieved on first use.
-    batch_issuer: RefCell<Option<Vec<u8>>>,
-    device_unique_issuer: RefCell<Option<Vec<u8>>>,
+    attestation_chain_info: RefCell<BTreeMap<device::SigningKeyType, AttestationChainInfo>>,
 
     /// Attestation ID information, fixed forever for a device, but retrieved on first use.
     attestation_id_info: RefCell<Option<Rc<AttestationIdInfo>>>,
@@ -225,10 +229,7 @@ impl<'a> KeyMintTa<'a> {
             boot_info: None,
             rot_data: None,
             hal_info: None,
-            batch_chain: RefCell::new(None),
-            device_unique_chain: RefCell::new(None),
-            batch_issuer: RefCell::new(None),
-            device_unique_issuer: RefCell::new(None),
+            attestation_chain_info: RefCell::new(BTreeMap::new()),
             attestation_id_info: RefCell::new(None),
         }
     }
