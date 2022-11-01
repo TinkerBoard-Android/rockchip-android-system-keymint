@@ -4,7 +4,7 @@
 // Explicitly include alloc because macros from `kmr_common` assume it.
 extern crate alloc;
 
-use kmr_common::{crypto, crypto::Rng, expect_err, hex_decode, keyblob, keyblob::legacy::KeyBlob};
+use kmr_common::{crypto, crypto::Rng, expect_err, keyblob, keyblob::legacy::KeyBlob};
 use kmr_crypto_boring::aes::BoringAes;
 use kmr_crypto_boring::eq::BoringEq;
 use kmr_crypto_boring::hmac::BoringHmac;
@@ -75,7 +75,7 @@ fn test_serialize_authenticated_legacy_keyblob() {
         KeyBlob { key_material: vec![0xbb, 0xbb], hw_enforced: vec![], sw_enforced: vec![] },
     )];
     for (hex_data, want) in tests {
-        let mut data = hex_decode(hex_data).unwrap();
+        let mut data = hex::decode(hex_data).unwrap();
 
         // Key blob cannot be deserialized without a correct MAC.
         let hmac = BoringHmac {};
@@ -136,7 +136,7 @@ fn test_deserialize_authenticated_legacy_keyblob_fail() {
     ];
     let hmac = BoringHmac {};
     for (hex_data, msg) in tests {
-        let mut data = hex_decode(hex_data).unwrap();
+        let mut data = hex::decode(hex_data).unwrap();
         fix_hmac(&mut data, &hidden);
         let result = KeyBlob::deserialize(&hmac, &data, &hidden, BoringEq);
         expect_err!(result, msg);
@@ -146,7 +146,7 @@ fn test_deserialize_authenticated_legacy_keyblob_fail() {
 #[test]
 fn test_deserialize_authenticated_legacy_keyblob_truncated() {
     let hidden = kmr_common::keyblob::legacy::hidden(&[], &[b"SW"]).unwrap();
-    let mut data = hex_decode(concat!(
+    let mut data = hex::decode(concat!(
         "00", // version
         "02000000",
         "bbbb", // key material

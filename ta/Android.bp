@@ -49,6 +49,7 @@ rust_test_host {
         "libciborium_io",
         "libder",
         "libflagset",
+        "libhex",
         "libkmr_common",
         "libkmr_wire",
         "liblog_rust",

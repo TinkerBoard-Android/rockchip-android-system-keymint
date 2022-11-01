@@ -1,6 +1,6 @@
 use super::*;
+use crate::expect_err;
 use crate::tag::legacy::{consume_u32, consume_u64, consume_u8, consume_vec};
-use crate::{expect_err, hex_decode};
 use alloc::vec;
 
 #[test]
@@ -169,7 +169,7 @@ fn test_serialize_encrypted_keyblob() {
         ),
     ];
     for (hex_data, want) in tests {
-        let data = hex_decode(hex_data).unwrap();
+        let data = hex::decode(hex_data).unwrap();
         let got = EncryptedKeyBlob::deserialize(&data).unwrap();
         assert_eq!(got, want);
         let new_data = got.serialize().unwrap();
@@ -227,7 +227,7 @@ fn test_deserialize_encrypted_keyblob_fail() {
         ),
     ];
     for (hex_data, msg) in tests {
-        let data = hex_decode(hex_data).unwrap();
+        let data = hex::decode(hex_data).unwrap();
         let result = EncryptedKeyBlob::deserialize(&data);
         expect_err!(result, msg);
     }
@@ -235,7 +235,7 @@ fn test_deserialize_encrypted_keyblob_fail() {
 
 #[test]
 fn test_deserialize_encrypted_keyblob_truncated() {
-    let data = hex_decode(concat!(
+    let data = hex::decode(concat!(
         "00", // format
         "01000000",
         "aa", // nonce

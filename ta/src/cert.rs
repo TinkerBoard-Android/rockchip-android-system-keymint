@@ -1168,7 +1168,6 @@ mod tests {
     use super::*;
     use alloc::boxed::Box;
     use alloc::vec;
-    use kmr_common::hex_encode;
 
     #[test]
     fn test_attest_ext_encode_decode() {
@@ -1229,7 +1228,7 @@ mod tests {
             "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
             "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         );
-        assert_eq!(kmr_common::hex_encode(&got), want);
+        assert_eq!(hex::encode(&got), want);
         assert_eq!(AttestationExtension::from_der(&got).unwrap(), ext);
     }
 
@@ -1242,7 +1241,7 @@ mod tests {
         ];
         for (input, want) in tests {
             let got = input.to_vec().unwrap();
-            assert_eq!(hex_encode(&got), want);
+            assert_eq!(hex::encode(&got), want);
         }
     }
 
@@ -1282,7 +1281,7 @@ mod tests {
             "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         );
         // encode
-        assert_eq!(kmr_common::hex_encode(&got), want);
+        assert_eq!(hex::encode(&got), want);
         // decode from encoded
         assert_eq!(AuthorizationList::from_der(got.as_slice()).unwrap(), authz_list);
     }
