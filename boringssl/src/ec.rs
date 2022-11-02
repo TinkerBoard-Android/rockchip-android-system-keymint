@@ -36,7 +36,17 @@ fn private_key_from_der_for_group(
 }
 
 /// [`crypto::Ec`] implementation based on BoringSSL.
-pub struct BoringEc;
+pub struct BoringEc {
+    /// Zero-sized private field to force use of [`default()`] for initialization.
+    _priv: core::marker::PhantomData<()>,
+}
+
+impl core::default::Default for BoringEc {
+    fn default() -> Self {
+        ffi::init();
+        Self { _priv: core::marker::PhantomData }
+    }
+}
 
 impl crypto::Ec for BoringEc {
     fn generate_nist_key(
@@ -261,9 +271,6 @@ impl BoringEcDigestSignOperation {
         let pkey = ossl!(openssl::pkey::PKey::from_ec_key(ec_key))?;
 
         unsafe {
-            // TODO: move initialization to single central place
-            ffi::init();
-
             let mut op = BoringEcDigestSignOperation {
                 pkey,
                 md_ctx: cvt_p(ffi::EVP_MD_CTX_new())?,
