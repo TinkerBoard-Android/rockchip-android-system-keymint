@@ -29,6 +29,9 @@ mod err;
 #[cfg(soong)]
 use err::*;
 
+#[cfg(test)]
+mod tests;
+
 /// Map an OpenSSL `ErrorStack` into a KeyMint [`ErrorCode`] value.
 pub(crate) fn map_openssl_errstack(errs: &openssl::error::ErrorStack) -> ErrorCode {
     let errors = errs.errors();
