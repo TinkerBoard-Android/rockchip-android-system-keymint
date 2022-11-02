@@ -46,14 +46,15 @@ rust_library_host {
     ],
 }
 
-rust_test_host {
-    name: "libkmr_crypto_boring_test",
-    srcs: ["src/lib.rs"],
-    rustlibs: [
-        "libkmr_tests",
-    ],
-    defaults: [
-        "libkmr_crypto_boring_defaults",
-    ],
-    test_suites: ["general-tests"],
-}
+// TODO(b/204562227): Rust host unit tests work locally but fail in CI.
+//rust_test_host {
+//    name: "libkmr_crypto_boring_test",
+//    srcs: ["src/lib.rs"],
+//    rustlibs: [
+//        "libkmr_tests",
+//    ],
+//    defaults: [
+//        "libkmr_crypto_boring_defaults",
+//    ],
+//    test_suites: ["general-tests"],
+//}
