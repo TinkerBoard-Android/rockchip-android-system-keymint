@@ -37,23 +37,23 @@ pub struct Implementation<'a> {
 pub trait RetrieveKeyMaterial {
     /// Retrieve the root key used for derivation of a per-keyblob key encryption key (KEK), passing
     /// in any opaque context.
-    fn root_kek(&self, context: &[u8]) -> RawKeyMaterial;
+    fn root_kek(&self, context: &[u8]) -> Result<RawKeyMaterial, Error>;
 
     /// Retrieve any opaque (but non-confidential) context needed for future calls to [`root_kek`].
     /// Context should not include confidential data (it will be stored in the clear).
-    fn kek_context(&self) -> Vec<u8> {
+    fn kek_context(&self) -> Result<Vec<u8>, Error> {
         // Default implementation is to have an empty KEK retrieval context.
-        Vec::new()
+        Ok(Vec::new())
     }
 
     /// Retrieve the key agreement key used for shared secret negotiation.
-    fn kak(&self) -> aes::Key;
+    fn kak(&self) -> Result<aes::Key, Error>;
 
     /// Retrieve the hardware backed secret used for UNIQUE_ID generation.
     fn unique_id_hbk(&self, ckdf: Option<&dyn crypto::Ckdf>) -> Result<crypto::hmac::Key, Error> {
         if let Some(ckdf) = ckdf {
             let unique_id_label = b"UniqueID HBK 32B";
-            ckdf.ckdf(&self.kak().into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
+            ckdf.ckdf(&self.kak()?.into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
         } else {
             Err(km_err!(Unimplemented, "default impl requires ckdf implementation"))
         }
