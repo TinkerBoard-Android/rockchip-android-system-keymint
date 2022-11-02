@@ -15,7 +15,7 @@ use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
 use kmr_common::{
     crypto::{self, RawKeyMaterial},
-    keyblob::{self, RootOfTrustInfo},
+    keyblob::{self, RootOfTrustInfo, SecureDeletionSlot},
     km_err, tag, vec_try, vec_try_with_capacity, Error, FallibleAllocExt,
 };
 use kmr_derive::AsCborValue;
@@ -248,13 +248,27 @@ impl<'a> KeyMintTa<'a> {
         }
     }
 
+    /// Parse and decrypt an encrypted key blob.
+    fn keyblob_parse_decrypt(
+        &self,
+        key_blob: &[u8],
+        params: &[KeyParam],
+    ) -> Result<(keyblob::PlaintextKeyBlob, Option<SecureDeletionSlot>), Error> {
+        // TODO: cope with previous versions/encodings of keys
+        let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(key_blob)?;
+        let hidden = tag::hidden(params, self.root_of_trust()?)?;
+        let sdd_slot = encrypted_keyblob.secure_deletion_slot();
+        let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
+        Ok((keyblob, sdd_slot))
+    }
+
     /// Decrypt an encrypted key blob.
     fn keyblob_decrypt(
         &self,
         encrypted_keyblob: keyblob::EncryptedKeyBlob,
         hidden: Vec<KeyParam>,
     ) -> Result<keyblob::PlaintextKeyBlob, Error> {
-        let root_kek = self.root_kek(encrypted_keyblob.kek_context());
+        let root_kek = self.root_kek(encrypted_keyblob.kek_context())?;
         let keyblob = keyblob::decrypt(
             match &self.dev.sdd_mgr {
                 None => None,
@@ -990,9 +1004,7 @@ impl<'a> KeyMintTa<'a> {
         if let Some(sk_wrapper) = self.dev.sk_wrapper {
             // Parse and decrypt the keyblob. Note that there is no way to provide extra hidden
             // params on the API.
-            let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(keyblob)?;
-            let hidden = tag::hidden(&[], self.root_of_trust()?)?;
-            let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
+            let (keyblob, _) = self.keyblob_parse_decrypt(keyblob, &[])?;
 
             // Now that we've got the key material, use a device-specific method to re-wrap it
             // with an ephemeral key.
@@ -1009,7 +1021,6 @@ impl<'a> KeyMintTa<'a> {
         app_data: Vec<u8>,
     ) -> Result<Vec<KeyCharacteristics>, Error> {
         // Parse and decrypt the keyblob, which requires extra hidden params.
-        let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(key_blob)?;
         let mut params = vec_try_with_capacity!(2)?;
         if !app_id.is_empty() {
             params.push(KeyParam::ApplicationId(app_id)); // capacity enough
@@ -1017,8 +1028,7 @@ impl<'a> KeyMintTa<'a> {
         if !app_data.is_empty() {
             params.push(KeyParam::ApplicationData(app_data)); // capacity enough
         }
-        let hidden = tag::hidden(&params, self.root_of_trust()?)?;
-        let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
+        let (keyblob, _) = self.keyblob_parse_decrypt(key_blob, &params)?;
         Ok(keyblob.characteristics)
     }
 
@@ -1052,7 +1062,7 @@ impl<'a> KeyMintTa<'a> {
     }
 
     /// Return the root key used for key encryption.
-    fn root_kek(&self, context: &[u8]) -> RawKeyMaterial {
+    fn root_kek(&self, context: &[u8]) -> Result<RawKeyMaterial, Error> {
         self.dev.keys.root_kek(context)
     }
 
