@@ -3,8 +3,7 @@
 use crate::{cert, device, AttestationChainInfo};
 use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
-use core::cmp::Ordering;
-use core::{borrow::Borrow, convert::TryFrom};
+use core::{borrow::Borrow, cmp::Ordering, convert::TryFrom};
 use der::{Decode, Sequence};
 use kmr_common::{
     crypto::{self, aes, rsa, KeyMaterial, OpaqueOr},
@@ -343,13 +342,10 @@ impl<'a> crate::KeyMintTa<'a> {
 
                 if let Some(attest_keyinfo) = attestation_key.as_ref() {
                     // User-specified attestation key provided.
-                    let encrypted_attest_keyblob =
-                        keyblob::EncryptedKeyBlob::new(&attest_keyinfo.key_blob)?;
-                    let attest_hidden =
-                        tag::hidden(&attest_keyinfo.attest_key_params, self.root_of_trust()?)?;
-
-                    attest_keyblob =
-                        self.keyblob_decrypt(encrypted_attest_keyblob, attest_hidden)?;
+                    (attest_keyblob, _) = self.keyblob_parse_decrypt(
+                        &attest_keyinfo.key_blob,
+                        &attest_keyinfo.attest_key_params,
+                    )?;
                     attest_keyblob
                         .suitable_for(KeyPurpose::AttestKey, self.hw_info.security_level)?;
                     if attest_keyinfo.issuer_subject_name.is_empty() {
@@ -432,8 +428,8 @@ impl<'a> crate::KeyMintTa<'a> {
         }
 
         // Now build the keyblob.
-        let kek_context = self.dev.keys.kek_context();
-        let root_kek = self.root_kek(&kek_context);
+        let kek_context = self.dev.keys.kek_context()?;
+        let root_kek = self.root_kek(&kek_context)?;
         let hidden = tag::hidden(params, self.root_of_trust()?)?;
         let encrypted_keyblob = keyblob::encrypt(
             self.hw_info.security_level,
@@ -468,9 +464,7 @@ impl<'a> crate::KeyMintTa<'a> {
         biometric_sid: i64,
     ) -> Result<KeyCreationResult, Error> {
         // Decrypt the wrapping key blob
-        let encrypted_wrapping_key_blob = keyblob::EncryptedKeyBlob::new(wrapping_key_blob)?;
-        let hidden_params = tag::hidden(unwrapping_params, self.root_of_trust()?)?;
-        let wrapping_key = self.keyblob_decrypt(encrypted_wrapping_key_blob, hidden_params)?;
+        let (wrapping_key, _) = self.keyblob_parse_decrypt(wrapping_key_blob, unwrapping_params)?;
         let keyblob::PlaintextKeyBlob { characteristics, key_material } = wrapping_key;
 
         // Decode the ASN.1 DER encoded `SecureKeyWrapper`.
@@ -623,11 +617,8 @@ impl<'a> crate::KeyMintTa<'a> {
         upgrade_params: Vec<KeyParam>,
     ) -> Result<Vec<u8>, Error> {
         // TODO: cope with previous versions/encodings of keys
-        let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(keyblob_to_upgrade)?;
-        let sdd_slot = encrypted_keyblob.secure_deletion_slot();
-
-        let hidden = tag::hidden(&upgrade_params, self.root_of_trust()?)?;
-        let mut keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden.clone())?;
+        let (mut keyblob, sdd_slot) =
+            self.keyblob_parse_decrypt(keyblob_to_upgrade, &upgrade_params)?;
 
         fn upgrade(v: &mut u32, curr: u32, name: &str) -> Result<bool, Error> {
             match (*v).cmp(&curr) {
@@ -724,8 +715,9 @@ impl<'a> crate::KeyMintTa<'a> {
         }
 
         // Now re-build the keyblob. Use a potentially fresh key encryption key.
-        let kek_context = self.dev.keys.kek_context();
-        let root_kek = self.root_kek(&kek_context);
+        let kek_context = self.dev.keys.kek_context()?;
+        let root_kek = self.root_kek(&kek_context)?;
+        let hidden = tag::hidden(&upgrade_params, self.root_of_trust()?)?;
         let encrypted_keyblob = keyblob::encrypt(
             self.hw_info.security_level,
             match &mut self.dev.sdd_mgr {

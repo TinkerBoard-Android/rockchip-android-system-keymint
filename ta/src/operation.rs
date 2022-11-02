@@ -161,10 +161,7 @@ impl<'a> crate::KeyMintTa<'a> {
         let op_idx = self.new_operation_index()?;
 
         // Parse and decrypt the keyblob, which requires extra hidden params.
-        let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(key_blob)?;
-        let sdd_slot = encrypted_keyblob.secure_deletion_slot();
-        let hidden = tag::hidden(&params, self.root_of_trust()?)?;
-        let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
+        let (keyblob, sdd_slot) = self.keyblob_parse_decrypt(key_blob, &params)?;
         let keyblob::PlaintextKeyBlob { characteristics, key_material } = keyblob;
 
         // Validate parameters.
