@@ -17,7 +17,17 @@ use openssl::hash::MessageDigest;
 const MIN_RSA_EXPONENT: RsaExponent = RsaExponent(3);
 
 /// [`crypto::Rsa`] implementation based on BoringSSL.
-pub struct BoringRsa;
+pub struct BoringRsa {
+    /// Zero-sized private field to force use of [`default()`] for initialization.
+    _priv: core::marker::PhantomData<()>,
+}
+
+impl core::default::Default for BoringRsa {
+    fn default() -> Self {
+        ffi::init();
+        Self { _priv: core::marker::PhantomData }
+    }
+}
 
 impl crypto::Rsa for BoringRsa {
     fn generate_key(
@@ -189,8 +199,6 @@ impl BoringRsaDigestSignOperation {
         let pkey = ossl!(openssl::pkey::PKey::from_rsa(rsa_key))?;
 
         unsafe {
-            ffi::init();
-
             let mut op = BoringRsaDigestSignOperation {
                 pkey,
                 md_ctx: cvt_p(ffi::EVP_MD_CTX_new())?,
