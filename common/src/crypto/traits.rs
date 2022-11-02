@@ -538,6 +538,7 @@ pub trait Ckdf {
 
 /// Macro to emit an error log indicating that an unimplemented function
 /// has been invoked (and where it is).
+#[macro_export]
 macro_rules! log_unimpl {
     () => {
         error!("{}:{}: Unimplemented placeholder KeyMint trait method invoked!", file!(), line!(),);
@@ -545,6 +546,7 @@ macro_rules! log_unimpl {
 }
 
 /// Mark a method as unimplemented (log error, return `ErrorCode::Unimplemented`)
+#[macro_export]
 macro_rules! unimpl {
     () => {
         log_unimpl!();
