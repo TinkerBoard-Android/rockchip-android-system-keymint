@@ -1,6 +1,7 @@
 //! Functionality related to RSA.
 
-use crate::{km_err, tag, Error};
+use super::{KeyMaterial, KeySizeInBits, RsaExponent};
+use crate::{km_err, tag, try_to_vec, Error};
 use alloc::vec::Vec;
 use der::{Decode, Encode};
 use kmr_wire::keymint::{Digest, KeyParam, PaddingMode};
@@ -157,4 +158,39 @@ impl SignMode {
             )),
         }
     }
+}
+
+/// Import an RSA key in PKCS#8 format, also returning the key size in bits and public exponent.
+pub fn import_pkcs8_key(data: &[u8]) -> Result<(KeyMaterial, KeySizeInBits, RsaExponent), Error> {
+    let key_info = pkcs8::PrivateKeyInfo::try_from(data)
+        .map_err(|_| km_err!(InvalidArgument, "failed to parse PKCS#8 RSA key"))?;
+    if key_info.algorithm.oid != X509_OID {
+        return Err(km_err!(
+            InvalidArgument,
+            "unexpected OID {:?} for PKCS#1 RSA key import",
+            key_info.algorithm.oid
+        ));
+    }
+    // For RSA, the inner private key is an ASN.1 `RSAPrivateKey`, as per PKCS#1 (RFC 3447 A.1.2).
+    let key = Key(try_to_vec(key_info.private_key)?);
+
+    // Need to parse it to find size/exponent.
+    let parsed_key = pkcs1::RsaPrivateKey::try_from(key_info.private_key)
+        .map_err(|_| km_err!(InvalidArgument, "failed to parse inner PKCS#1 key"))?;
+    let key_size = parsed_key.modulus.as_bytes().len() as u32 * 8;
+
+    let pub_exponent_bytes = parsed_key.public_exponent.as_bytes();
+    if pub_exponent_bytes.len() > 8 {
+        return Err(km_err!(
+            InvalidArgument,
+            "public exponent of length {} too big",
+            pub_exponent_bytes.len()
+        ));
+    }
+    let offset = 8 - pub_exponent_bytes.len();
+    let mut pub_exponent_arr = [0u8; 8];
+    pub_exponent_arr[offset..].copy_from_slice(pub_exponent_bytes);
+    let pub_exponent = u64::from_be_bytes(pub_exponent_arr);
+
+    Ok((KeyMaterial::Rsa(key.into()), KeySizeInBits(key_size), RsaExponent(pub_exponent)))
 }
