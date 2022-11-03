@@ -1,13 +1,9 @@
 //! Traits representing abstractions of cryptographic functionality.
 
 use super::*;
-use crate::{keyblob, try_to_vec, vec_try, Error};
+use crate::{keyblob, vec_try, Error};
 use alloc::{boxed::Box, vec::Vec};
-use kmr_wire::{
-    keymint,
-    keymint::{Digest, EcCurve},
-    KeySizeInBits, RsaExponent,
-};
+use kmr_wire::{keymint, keymint::Digest, KeySizeInBits, RsaExponent};
 use log::{error, warn};
 
 /// Combined collection of trait implementations that must be provided.
@@ -245,38 +241,7 @@ pub trait Rsa {
         data: &[u8],
         _params: &[keymint::KeyParam],
     ) -> Result<(KeyMaterial, KeySizeInBits, RsaExponent), Error> {
-        let key_info = pkcs8::PrivateKeyInfo::try_from(data)
-            .map_err(|_| km_err!(InvalidArgument, "failed to parse PKCS#8 RSA key"))?;
-        if key_info.algorithm.oid != rsa::X509_OID {
-            return Err(km_err!(
-                InvalidArgument,
-                "unexpected OID {:?} for PKCS#1 RSA key import",
-                key_info.algorithm.oid
-            ));
-        }
-        // For RSA, the inner private key is an ASN.1 `RSAPrivateKey`, as per
-        // PKCS#1 (RFC 3447 A.1.2).
-        let key = rsa::Key(try_to_vec(key_info.private_key)?);
-
-        // Need to parse it to find size/exponent.
-        let parsed_key = pkcs1::RsaPrivateKey::try_from(key_info.private_key)
-            .map_err(|_| km_err!(InvalidArgument, "failed to parse inner PKCS#1 key"))?;
-        let key_size = parsed_key.modulus.as_bytes().len() as u32 * 8;
-
-        let pub_exponent_bytes = parsed_key.public_exponent.as_bytes();
-        if pub_exponent_bytes.len() > 8 {
-            return Err(km_err!(
-                InvalidArgument,
-                "public exponent of length {} too big",
-                pub_exponent_bytes.len()
-            ));
-        }
-        let offset = 8 - pub_exponent_bytes.len();
-        let mut pub_exponent_arr = [0u8; 8];
-        pub_exponent_arr[offset..].copy_from_slice(pub_exponent_bytes);
-        let pub_exponent = u64::from_be_bytes(pub_exponent_arr);
-
-        Ok((KeyMaterial::Rsa(key.into()), KeySizeInBits(key_size), RsaExponent(pub_exponent)))
+        rsa::import_pkcs8_key(data)
     }
 
     /// Create an RSA decryption operation.
@@ -329,94 +294,9 @@ pub trait Ec {
     fn import_pkcs8_key(
         &self,
         data: &[u8],
-        params: &[keymint::KeyParam],
+        _params: &[keymint::KeyParam],
     ) -> Result<KeyMaterial, Error> {
-        let key_info = pkcs8::PrivateKeyInfo::try_from(data)
-            .map_err(|_| km_err!(InvalidArgument, "failed to parse PKCS#8 EC key"))?;
-        let algo_params = key_info.algorithm.parameters;
-        match key_info.algorithm.oid {
-            ec::X509_NIST_OID => {
-                let algo_params = algo_params.ok_or_else(|| {
-                    km_err!(
-                        InvalidArgument,
-                        "missing PKCS#8 parameters for NIST curve import under OID {:?}",
-                        key_info.algorithm.oid
-                    )
-                })?;
-                let curve_oid = algo_params
-                    .oid()
-                    .map_err(|_e| km_err!(InvalidArgument, "imported key has no OID parameter"))?;
-                let (curve, key) = match curve_oid {
-                    ec::ALGO_PARAM_P224_OID => (
-                        EcCurve::P224,
-                        ec::Key::P224(ec::NistKey(try_to_vec(key_info.private_key)?)),
-                    ),
-                    ec::ALGO_PARAM_P256_OID => (
-                        EcCurve::P256,
-                        ec::Key::P256(ec::NistKey(try_to_vec(key_info.private_key)?)),
-                    ),
-                    ec::ALGO_PARAM_P384_OID => (
-                        EcCurve::P384,
-                        ec::Key::P384(ec::NistKey(try_to_vec(key_info.private_key)?)),
-                    ),
-                    ec::ALGO_PARAM_P521_OID => (
-                        EcCurve::P521,
-                        ec::Key::P521(ec::NistKey(try_to_vec(key_info.private_key)?)),
-                    ),
-                    oid => {
-                        return Err(km_err!(
-                            ImportParameterMismatch,
-                            "imported key has unknown OID {:?}",
-                            oid,
-                        ))
-                    }
-                };
-                Ok(KeyMaterial::Ec(curve, CurveType::Nist, key.into()))
-            }
-            ec::X509_ED25519_OID => {
-                if algo_params.is_some() {
-                    Err(km_err!(InvalidArgument, "unexpected PKCS#8 parameters for Ed25519 import"))
-                } else {
-                    // For Ed25519 the PKCS#8 `privateKey` field holds a `CurvePrivateKey`
-                    // (RFC 8410 s7) that is an OCTET STRING holding the raw key.  As this is DER,
-                    // this is just a 2 byte prefix (0x04 = OCTET STRING, 0x20 = length of raw key).
-                    if key_info.private_key.len() != 2 + ec::CURVE25519_PRIV_KEY_LEN
-                        || key_info.private_key[0] != 0x04
-                        || key_info.private_key[1] != 0x20
-                    {
-                        return Err(km_err!(
-                            InvalidArgument,
-                            "unexpected CurvePrivateKey contents"
-                        ));
-                    }
-                    self.import_raw_ed25519_key(&key_info.private_key[2..], params)
-                }
-            }
-            ec::X509_X25519_OID => {
-                if algo_params.is_some() {
-                    Err(km_err!(InvalidArgument, "unexpected PKCS#8 parameters for X25519 import",))
-                } else {
-                    // For X25519 the PKCS#8 `privateKey` field holds a `CurvePrivateKey`
-                    // (RFC 8410 s7) that is an OCTET STRING holding the raw key.  As this is DER,
-                    // this is just a 2 byte prefix (0x04 = OCTET STRING, 0x20 = length of raw key).
-                    if key_info.private_key.len() != 2 + ec::CURVE25519_PRIV_KEY_LEN
-                        || key_info.private_key[0] != 0x04
-                        || key_info.private_key[1] != 0x20
-                    {
-                        return Err(km_err!(
-                            InvalidArgument,
-                            "unexpected CurvePrivateKey contents"
-                        ));
-                    }
-                    self.import_raw_x25519_key(&key_info.private_key[2..], params)
-                }
-            }
-            _ => Err(km_err!(
-                InvalidArgument,
-                "unexpected OID {:?} for PKCS#8 EC key import",
-                key_info.algorithm.oid,
-            )),
-        }
+        ec::import_pkcs8_key(data)
     }
 
     /// Import a 32-byte raw Ed25519 key.  Key import parameters are passed in for reference, to
@@ -426,14 +306,7 @@ pub trait Ec {
         data: &[u8],
         _params: &[keymint::KeyParam],
     ) -> Result<KeyMaterial, Error> {
-        let key = data.try_into().map_err(|_e| {
-            km_err!(InvalidInputLength, "import Ed25519 key of incorrect len {}", data.len())
-        })?;
-        Ok(KeyMaterial::Ec(
-            EcCurve::Curve25519,
-            CurveType::EdDsa,
-            ec::Key::Ed25519(ec::Ed25519Key(key)).into(),
-        ))
+        ec::import_raw_ed25519_key(data)
     }
 
     /// Import a 32-byte raw X25519 key.  Key import parameters are passed in for reference, to
@@ -443,14 +316,7 @@ pub trait Ec {
         data: &[u8],
         _params: &[keymint::KeyParam],
     ) -> Result<KeyMaterial, Error> {
-        let key = data.try_into().map_err(|_e| {
-            km_err!(InvalidInputLength, "import X25519 key of incorrect len {}", data.len())
-        })?;
-        Ok(KeyMaterial::Ec(
-            EcCurve::Curve25519,
-            CurveType::Xdh,
-            ec::Key::X25519(ec::X25519Key(key)).into(),
-        ))
+        ec::import_raw_x25519_key(data)
     }
 
     /// Return the public key data that corresponds to the provided private `key`, as a SEC-1
