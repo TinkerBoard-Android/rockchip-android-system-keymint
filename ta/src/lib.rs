@@ -227,8 +227,21 @@ impl<'a> KeyMintTa<'a> {
         key_blob: &[u8],
         params: &[KeyParam],
     ) -> Result<(keyblob::PlaintextKeyBlob, Option<SecureDeletionSlot>), Error> {
-        // TODO: cope with previous versions/encodings of keys
-        let encrypted_keyblob = keyblob::EncryptedKeyBlob::new(key_blob)?;
+        let encrypted_keyblob = match keyblob::EncryptedKeyBlob::new(key_blob) {
+            Ok(k) => k,
+            Err(e) => {
+                // We might have failed to parse the keyblob because it is in some prior format.
+                if let Some(old_key) = self.dev.legacy_key.as_ref() {
+                    if old_key.is_legacy_key(key_blob, params, self.boot_info()?) {
+                        return Err(km_err!(
+                            KeyRequiresUpgrade,
+                            "legacy key detected, request upgrade"
+                        ));
+                    }
+                }
+                return Err(e);
+            }
+        };
         let hidden = tag::hidden(params, self.root_of_trust()?)?;
         let sdd_slot = encrypted_keyblob.secure_deletion_slot();
         let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;

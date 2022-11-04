@@ -10,7 +10,7 @@ use alloc::{
 };
 use kmr_derive::AsCborValue;
 use kmr_wire::keymint::{
-    KeyCharacteristics, KeyParam, KeyPurpose, SecurityLevel, VerifiedBootState,
+    BootInfo, KeyCharacteristics, KeyParam, KeyPurpose, SecurityLevel, VerifiedBootState,
 };
 use kmr_wire::{cbor, cbor_type_error, AsCborValue, CborError};
 use log::error;
@@ -113,6 +113,22 @@ pub struct EncryptedKeyBlobV1 {
     /// Identifier for a slot in secure storage that holds additional secret values
     /// that are required to derive the key encryption key.
     pub secure_deletion_slot: Option<SecureDeletionSlot>,
+}
+
+/// Trait to handle keyblobs in a format from a previous implementation.
+pub trait LegacyKeyHandler {
+    /// Indicate whether a keyblob is a legacy key format.
+    fn is_legacy_key(&self, keyblob: &[u8], params: &[KeyParam], root_of_trust: &BootInfo) -> bool;
+
+    /// Convert a legacy key (for which [`is_legacy_key`] returned true) into current format.
+    /// This method should destroy any secure deletion data associated with the key.
+    fn convert_legacy_key(
+        &mut self,
+        keyblob: &[u8],
+        params: &[KeyParam],
+        root_of_trust: &BootInfo,
+        sec_level: SecurityLevel,
+    ) -> Result<PlaintextKeyBlob, Error>;
 }
 
 /// Secret data that can be mixed into the key derivation inputs for keys; if the secret data is
