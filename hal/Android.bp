@@ -24,7 +24,6 @@ rust_defaults {
         "keymint_use_latest_hal_aidl_rust",
     ],
     rustlibs: [
-        "android.hardware.security.rkp-V3-rust",
         "android.hardware.security.secureclock-V1-rust",
         "android.hardware.security.sharedsecret-V1-rust",
         "libbinder_rs",
