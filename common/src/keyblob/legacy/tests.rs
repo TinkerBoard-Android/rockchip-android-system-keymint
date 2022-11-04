@@ -92,6 +92,8 @@ fn test_serialize_encrypted_keyblob() {
                 nonce: vec![0xaa],
                 ciphertext: vec![0xbb, 0xbb],
                 tag: vec![0xcc],
+                kdf_version: None,
+                addl_info: None,
                 hw_enforced: vec![],
                 sw_enforced: vec![],
                 key_slot: None,
@@ -123,6 +125,43 @@ fn test_serialize_encrypted_keyblob() {
                 nonce: vec![0xaa],
                 ciphertext: vec![0xbb, 0xbb],
                 tag: vec![0xcc],
+                kdf_version: None,
+                addl_info: None,
+                hw_enforced: vec![],
+                sw_enforced: vec![],
+                key_slot: Some(6),
+            },
+        ),
+        (
+            concat!(
+                "03", // format
+                "01000000",
+                "aa", // nonce
+                "02000000",
+                "bbbb", // ciphertext
+                "01000000",
+                "cc",       // tag
+                "01010101", // kdf_version
+                "04040404", // addl_info
+                concat!(
+                    "00000000", // no blob data
+                    "00000000", // no params
+                    "00000000", // zero size of params
+                ),
+                concat!(
+                    "00000000", // no blob data
+                    "00000000", // no params
+                    "00000000", // zero size of params
+                ),
+                "06000000",
+            ),
+            EncryptedKeyBlob {
+                format: AuthEncryptedBlobFormat::AesGcmWithSwEnforcedVersioned,
+                nonce: vec![0xaa],
+                ciphertext: vec![0xbb, 0xbb],
+                tag: vec![0xcc],
+                kdf_version: Some(0x01010101),
+                addl_info: Some(0x04040404),
                 hw_enforced: vec![],
                 sw_enforced: vec![],
                 key_slot: Some(6),
@@ -143,7 +182,7 @@ fn test_deserialize_encrypted_keyblob_fail() {
     let tests = vec![
         (
             concat!(
-                "04", // format (invalid)
+                "09", // format (invalid)
                 "01000000",
                 "aa", // nonce
                 "02000000",
@@ -161,7 +200,7 @@ fn test_deserialize_encrypted_keyblob_fail() {
                     "00000000", // zero size of params
                 ),
             ),
-            "unexpected blob format 4",
+            "unexpected blob format 9",
         ),
         (
             concat!(
