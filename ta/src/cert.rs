@@ -272,7 +272,7 @@ pub(crate) fn attestation_extension<'a>(
     params: &'a [KeyParam],
     chars: &'a [KeyCharacteristics],
     unique_id: &'a Vec<u8>,
-    boot_info: &'a crate::BootInfo,
+    boot_info: &'a keymint::BootInfo,
 ) -> Result<AttestationExtension<'a>, Error> {
     let mut sw_chars: &[KeyParam] = &[];
     let mut hw_chars: &[KeyParam] = &[];
@@ -1123,8 +1123,8 @@ struct RootOfTrust<'a> {
     verified_boot_hash: &'a [u8],
 }
 
-impl<'a> From<&'a crate::BootInfo> for RootOfTrust<'a> {
-    fn from(info: &crate::BootInfo) -> RootOfTrust {
+impl<'a> From<&'a keymint::BootInfo> for RootOfTrust<'a> {
+    fn from(info: &keymint::BootInfo) -> RootOfTrust {
         RootOfTrust {
             verified_boot_key: &info.verified_boot_key[..],
             device_locked: info.device_boot_locked,
