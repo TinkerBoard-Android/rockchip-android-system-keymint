@@ -183,3 +183,4 @@ in [`kmr_hal::device`](hal/src/device.rs).
 - [ ] Bootloader status retrieval (optional)
 - [ ] Storage key wrapping integration (optional).
 - [ ] Trusted user presence indication (optional).
+- [ ] Legacy keyblob format converter (optional).
