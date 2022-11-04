@@ -2,7 +2,7 @@
 
 use super::{ChannelHalService, SerializedChannel};
 use crate::binder;
-use crate::hal::{rkp, Innto};
+use crate::hal::{keymint, Innto};
 use kmr_wire::*;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -21,8 +21,9 @@ impl<T: SerializedChannel + 'static> Device<T> {
     /// Create a new instance wrapped in a proxy object.
     pub fn new_as_binder(
         channel: Arc<Mutex<T>>,
-    ) -> binder::Strong<dyn rkp::IRemotelyProvisionedComponent::IRemotelyProvisionedComponent> {
-        rkp::IRemotelyProvisionedComponent::BnRemotelyProvisionedComponent::new_binder(
+    ) -> binder::Strong<dyn keymint::IRemotelyProvisionedComponent::IRemotelyProvisionedComponent>
+    {
+        keymint::IRemotelyProvisionedComponent::BnRemotelyProvisionedComponent::new_binder(
             Self::new(channel),
             binder::BinderFeatures::default(),
         )
@@ -37,17 +38,17 @@ impl<T: SerializedChannel> ChannelHalService<T> for Device<T> {
 
 impl<T: SerializedChannel> binder::Interface for Device<T> {}
 
-impl<T: SerializedChannel> rkp::IRemotelyProvisionedComponent::IRemotelyProvisionedComponent
+impl<T: SerializedChannel> keymint::IRemotelyProvisionedComponent::IRemotelyProvisionedComponent
     for Device<T>
 {
-    fn getHardwareInfo(&self) -> binder::Result<rkp::RpcHardwareInfo::RpcHardwareInfo> {
+    fn getHardwareInfo(&self) -> binder::Result<keymint::RpcHardwareInfo::RpcHardwareInfo> {
         let rsp: GetRpcHardwareInfoResponse = self.execute(GetRpcHardwareInfoRequest {})?;
         Ok(rsp.ret.innto())
     }
     fn generateEcdsaP256KeyPair(
         &self,
         testMode: bool,
-        macedPublicKey: &mut rkp::MacedPublicKey::MacedPublicKey,
+        macedPublicKey: &mut keymint::MacedPublicKey::MacedPublicKey,
     ) -> binder::Result<Vec<u8>> {
         let rsp: GenerateEcdsaP256KeyPairResponse =
             self.execute(GenerateEcdsaP256KeyPairRequest { test_mode: testMode })?;
@@ -57,11 +58,11 @@ impl<T: SerializedChannel> rkp::IRemotelyProvisionedComponent::IRemotelyProvisio
     fn generateCertificateRequest(
         &self,
         testMode: bool,
-        keysToSign: &[rkp::MacedPublicKey::MacedPublicKey],
+        keysToSign: &[keymint::MacedPublicKey::MacedPublicKey],
         endpointEncryptionCertChain: &[u8],
         challenge: &[u8],
-        deviceInfo: &mut rkp::DeviceInfo::DeviceInfo,
-        protectedData: &mut rkp::ProtectedData::ProtectedData,
+        deviceInfo: &mut keymint::DeviceInfo::DeviceInfo,
+        protectedData: &mut keymint::ProtectedData::ProtectedData,
     ) -> binder::Result<Vec<u8>> {
         let rsp: GenerateCertificateRequestResponse =
             self.execute(GenerateCertificateRequestRequest {
@@ -76,7 +77,7 @@ impl<T: SerializedChannel> rkp::IRemotelyProvisionedComponent::IRemotelyProvisio
     }
     fn generateCertificateRequestV2(
         &self,
-        keysToSign: &[rkp::MacedPublicKey::MacedPublicKey],
+        keysToSign: &[keymint::MacedPublicKey::MacedPublicKey],
         challenge: &[u8],
     ) -> binder::Result<Vec<u8>> {
         let rsp: GenerateCertificateRequestV2Response =
