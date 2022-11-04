@@ -13,7 +13,7 @@ use kmr_wire::{
 };
 
 /// Retrieve a `u8` from the start of the given slice, if possible.
-pub(crate) fn consume_u8(data: &mut &[u8]) -> Result<u8, Error> {
+pub fn consume_u8(data: &mut &[u8]) -> Result<u8, Error> {
     match data.first() {
         Some(b) => {
             *data = &(*data)[1..];
@@ -26,7 +26,7 @@ pub(crate) fn consume_u8(data: &mut &[u8]) -> Result<u8, Error> {
 /// Move past a bool value from the start of the given slice, if possible.
 /// Bool values should only be included if `true`, so fail if the value
 /// is anything other than 1.
-pub(crate) fn consume_bool(data: &mut &[u8]) -> Result<(), Error> {
+pub fn consume_bool(data: &mut &[u8]) -> Result<(), Error> {
     let b = consume_u8(data)?;
     if b == 0x01 {
         Ok(())
@@ -36,7 +36,7 @@ pub(crate) fn consume_bool(data: &mut &[u8]) -> Result<(), Error> {
 }
 
 /// Retrieve a (host-ordered) `u32` from the start of the given slice, if possible.
-pub(crate) fn consume_u32(data: &mut &[u8]) -> Result<u32, Error> {
+pub fn consume_u32(data: &mut &[u8]) -> Result<u32, Error> {
     if data.len() < 4 {
         return Err(km_err!(InvalidKeyBlob, "failed to find 4 bytes"));
     }
@@ -46,7 +46,7 @@ pub(crate) fn consume_u32(data: &mut &[u8]) -> Result<u32, Error> {
 }
 
 /// Retrieve a (host-ordered) `i32` from the start of the given slice, if possible.
-pub(crate) fn consume_i32(data: &mut &[u8]) -> Result<i32, Error> {
+pub fn consume_i32(data: &mut &[u8]) -> Result<i32, Error> {
     if data.len() < 4 {
         return Err(km_err!(InvalidKeyBlob, "failed to find 4 bytes"));
     }
@@ -56,7 +56,7 @@ pub(crate) fn consume_i32(data: &mut &[u8]) -> Result<i32, Error> {
 }
 
 /// Retrieve a (host-ordered) `u64` from the start of the given slice, if possible.
-pub(crate) fn consume_u64(data: &mut &[u8]) -> Result<u64, Error> {
+pub fn consume_u64(data: &mut &[u8]) -> Result<u64, Error> {
     if data.len() < 8 {
         return Err(km_err!(InvalidKeyBlob, "failed to find 8 bytes"));
     }
@@ -66,7 +66,7 @@ pub(crate) fn consume_u64(data: &mut &[u8]) -> Result<u64, Error> {
 }
 
 /// Retrieve a (host-ordered) `i64` from the start of the given slice, if possible.
-pub(crate) fn consume_i64(data: &mut &[u8]) -> Result<i64, Error> {
+pub fn consume_i64(data: &mut &[u8]) -> Result<i64, Error> {
     if data.len() < 8 {
         return Err(km_err!(InvalidKeyBlob, "failed to find 8 bytes"));
     }
@@ -77,7 +77,7 @@ pub(crate) fn consume_i64(data: &mut &[u8]) -> Result<i64, Error> {
 
 /// Retrieve a vector of bytes from the start of the given slice, if possible,
 /// with the length of the data is expected to appear as a host-ordered `u32` prefix.
-pub(crate) fn consume_vec(data: &mut &[u8]) -> Result<Vec<u8>, Error> {
+pub fn consume_vec(data: &mut &[u8]) -> Result<Vec<u8>, Error> {
     let len = consume_u32(data)? as usize;
     if len > data.len() {
         return Err(km_err!(InvalidKeyBlob, "failed to find {} bytes", len));

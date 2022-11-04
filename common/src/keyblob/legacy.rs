@@ -1,6 +1,6 @@
 //! Utilities for handling legacy KeyMaster/KeyMint key blobs.
 
-use crate::tag::legacy::{consume_u32, consume_u8, consume_vec};
+use crate::tag::legacy::{consume_i32, consume_u32, consume_u8, consume_vec};
 use crate::{
     crypto, get_opt_tag_value, km_err, try_to_vec, vec_try_with_capacity, Error, FallibleAllocExt,
 };
@@ -23,6 +23,20 @@ pub enum AuthEncryptedBlobFormat {
     AesOcb = 0,
     AesGcmWithSwEnforced = 1,
     AesGcmWithSecureDeletion = 2,
+    AesGcmWithSwEnforcedVersioned = 3,
+    AesGcmWithSecureDeletionVersioned = 4,
+}
+
+impl AuthEncryptedBlobFormat {
+    pub fn requires_secure_deletion(&self) -> bool {
+        matches!(self, Self::AesGcmWithSecureDeletion | Self::AesGcmWithSecureDeletionVersioned)
+    }
+    pub fn is_versioned(&self) -> bool {
+        matches!(
+            self,
+            Self::AesGcmWithSwEnforcedVersioned | Self::AesGcmWithSecureDeletionVersioned
+        )
+    }
 }
 
 /// Encrypted key blob, including key characteristics.
@@ -35,13 +49,15 @@ pub struct EncryptedKeyBlob {
     pub ciphertext: Vec<u8>,
     // Authenticated encryption tag.
     pub tag: Vec<u8>,
+
+    // The following two fields are preset iff `format.is_versioned()`
+    pub kdf_version: Option<u32>,
+    pub addl_info: Option<i32>,
+
     pub hw_enforced: Vec<KeyParam>,
     pub sw_enforced: Vec<KeyParam>,
     pub key_slot: Option<u32>,
 }
-
-// TODO: add decryption support so that keyblobs from a previous version of KeyMint can be
-// upgraded (assuming that the KEK material is available).
 
 impl EncryptedKeyBlob {
     /// Serialize an [`EncryptedKeyBlob`].
@@ -67,6 +83,16 @@ impl EncryptedKeyBlob {
         result.extend_from_slice(&self.ciphertext);
         result.extend_from_slice(&(self.tag.len() as u32).to_ne_bytes());
         result.extend_from_slice(&self.tag);
+        if self.format.is_versioned() {
+            let kdf_version = self.kdf_version.ok_or_else(|| {
+                km_err!(UnknownError, "keyblob of format {:?} missing kdf_version", self.format)
+            })? as u32;
+            let addl_info = self.addl_info.ok_or_else(|| {
+                km_err!(UnknownError, "keyblob of format {:?} missing addl_info", self.format)
+            })? as u32;
+            result.extend_from_slice(&kdf_version.to_ne_bytes());
+            result.extend_from_slice(&addl_info.to_ne_bytes());
+        }
         result.extend_from_slice(&hw_enforced_data);
         result.extend_from_slice(&sw_enforced_data);
         if let Some(slot) = self.key_slot {
@@ -85,12 +111,24 @@ impl EncryptedKeyBlob {
             x if x == AuthEncryptedBlobFormat::AesGcmWithSecureDeletion as u8 => {
                 AuthEncryptedBlobFormat::AesGcmWithSecureDeletion
             }
+            x if x == AuthEncryptedBlobFormat::AesGcmWithSwEnforcedVersioned as u8 => {
+                AuthEncryptedBlobFormat::AesGcmWithSwEnforcedVersioned
+            }
+            x if x == AuthEncryptedBlobFormat::AesGcmWithSecureDeletionVersioned as u8 => {
+                AuthEncryptedBlobFormat::AesGcmWithSecureDeletionVersioned
+            }
             x => return Err(km_err!(InvalidKeyBlob, "unexpected blob format {}", x)),
         };
 
         let nonce = consume_vec(&mut data)?;
         let ciphertext = consume_vec(&mut data)?;
         let tag = consume_vec(&mut data)?;
+        let mut kdf_version = None;
+        let mut addl_info = None;
+        if format.is_versioned() {
+            kdf_version = Some(consume_u32(&mut data)?);
+            addl_info = Some(consume_i32(&mut data)?);
+        }
         let hw_enforced = crate::tag::legacy::deserialize(&mut data)?;
         let sw_enforced = crate::tag::legacy::deserialize(&mut data)?;
 
@@ -100,7 +138,17 @@ impl EncryptedKeyBlob {
             _ => return Err(km_err!(InvalidKeyBlob, "unexpected remaining length {}", data.len())),
         };
 
-        Ok(EncryptedKeyBlob { format, nonce, ciphertext, tag, hw_enforced, sw_enforced, key_slot })
+        Ok(EncryptedKeyBlob {
+            format,
+            nonce,
+            ciphertext,
+            tag,
+            kdf_version,
+            addl_info,
+            hw_enforced,
+            sw_enforced,
+            key_slot,
+        })
     }
 }
 
