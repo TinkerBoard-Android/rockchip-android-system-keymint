@@ -616,9 +616,28 @@ impl<'a> crate::KeyMintTa<'a> {
         keyblob_to_upgrade: &[u8],
         upgrade_params: Vec<KeyParam>,
     ) -> Result<Vec<u8>, Error> {
-        // TODO: cope with previous versions/encodings of keys
         let (mut keyblob, sdd_slot) =
-            self.keyblob_parse_decrypt(keyblob_to_upgrade, &upgrade_params)?;
+            match self.keyblob_parse_decrypt(keyblob_to_upgrade, &upgrade_params) {
+                Ok(v) => v,
+                Err(Error::Hal(ErrorCode::KeyRequiresUpgrade, _)) => {
+                    // This keyblob looks to be in a legacy format, so convert it.
+                    let legacy_handler = self
+                        .dev
+                        .legacy_key
+                        .as_mut()
+                        .ok_or_else(|| km_err!(UnknownError, "no legacy key handler"))?;
+                    let keyblob = legacy_handler.convert_legacy_key(
+                        keyblob_to_upgrade,
+                        &upgrade_params,
+                        self.boot_info
+                            .as_ref()
+                            .ok_or_else(|| km_err!(HardwareNotYetAvailable, "no boot info"))?,
+                        self.hw_info.security_level,
+                    )?;
+                    (keyblob, None)
+                }
+                Err(e) => return Err(e),
+            };
 
         fn upgrade(v: &mut u32, curr: u32, name: &str) -> Result<bool, Error> {
             match (*v).cmp(&curr) {

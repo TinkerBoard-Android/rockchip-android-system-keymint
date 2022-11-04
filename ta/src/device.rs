@@ -32,6 +32,9 @@ pub struct Implementation<'a> {
 
     /// Trusted user presence indicator.
     pub tup: &'a dyn TrustedUserPresence,
+
+    /// Legacy key conversion handling.
+    pub legacy_key: Option<&'a mut dyn keyblob::LegacyKeyHandler>,
 }
 
 /// Retrieval of key material.  The caller is expected to drop the key material as soon as it is
