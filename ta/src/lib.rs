@@ -3,13 +3,7 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::{
-    collections::BTreeMap,
-    format,
-    rc::Rc,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{collections::BTreeMap, rc::Rc, string::ToString, vec::Vec};
 use core::cmp::Ordering;
 use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
@@ -18,7 +12,6 @@ use kmr_common::{
     keyblob::{self, RootOfTrustInfo, SecureDeletionSlot},
     km_err, tag, vec_try, vec_try_with_capacity, Error, FallibleAllocExt,
 };
-use kmr_derive::AsCborValue;
 use kmr_wire::{
     coset::TaggedCborSerializable,
     keymint::{
@@ -93,7 +86,7 @@ pub struct KeyMintTa<'a> {
     shared_secret_params: Option<SharedSecretParameters>,
 
     /// Information provided by the bootloader once at start of day.
-    boot_info: Option<BootInfo>,
+    boot_info: Option<keymint::BootInfo>,
     rot_data: Option<Vec<u8>>,
 
     /// Information provided by the HAL service once at start of day.
@@ -159,33 +152,6 @@ pub struct HardwareInfo {
     pub fused: bool, // Used as `DeviceInfo.fused` for RKP
 }
 
-/// Information provided once at start-of-day, normally by the bootloader.
-///
-/// Field order is fixed, to match the CBOR type definition of `RootOfTrust` in `IKeyMintDevice`.
-#[derive(Clone, Debug, AsCborValue, PartialEq, Eq)]
-pub struct BootInfo {
-    pub verified_boot_key: [u8; 32],
-    pub device_boot_locked: bool,
-    pub verified_boot_state: VerifiedBootState,
-    pub verified_boot_hash: [u8; 32],
-    pub boot_patchlevel: u32, // YYYYMMDD format
-}
-
-// Implement the `coset` CBOR serialization traits in terms of the local `AsCborValue` trait,
-// in order to get access to tagged versions of serialize/deserialize.
-impl coset::AsCborValue for BootInfo {
-    fn from_cbor_value(value: cbor::value::Value) -> coset::Result<Self> {
-        <Self as AsCborValue>::from_cbor_value(value).map_err(|e| e.into())
-    }
-    fn to_cbor_value(self) -> coset::Result<cbor::value::Value> {
-        <Self as AsCborValue>::to_cbor_value(self).map_err(|e| e.into())
-    }
-}
-
-impl TaggedCborSerializable for BootInfo {
-    const TAG: u64 = 40001;
-}
-
 /// Information provided once at service start by the HAL service, describing
 /// the state of the userspace operating system (which may change from boot to
 /// boot, e.g. for running GSI).
@@ -246,6 +212,13 @@ impl<'a> KeyMintTa<'a> {
         } else {
             kmr_common::tag::SecureStorage::Unavailable
         }
+    }
+
+    /// Return the device's boot information.
+    fn boot_info(&self) -> Result<&keymint::BootInfo, Error> {
+        self.boot_info
+            .as_ref()
+            .ok_or_else(|| km_err!(HardwareNotYetAvailable, "no boot info available"))
     }
 
     /// Parse and decrypt an encrypted key blob.
@@ -406,7 +379,7 @@ impl<'a> KeyMintTa<'a> {
     /// Configure the boot-specific root of trust info.  KeyMint implementors should call this
     /// method when this information arrives from the bootloader (which happens in an
     /// implementation-specific manner).
-    pub fn set_boot_info(&mut self, boot_info: BootInfo) {
+    pub fn set_boot_info(&mut self, boot_info: keymint::BootInfo) {
         if !self.in_early_boot {
             error!("Rejecting attempt to set boot info {:?} after early boot", boot_info);
         }
@@ -508,7 +481,7 @@ impl<'a> KeyMintTa<'a> {
                     Ok(state) => state,
                     Err(e) => return op_error_rsp(SetBootInfoRequest::CODE, Error::Cbor(e)),
                 };
-                self.set_boot_info(BootInfo {
+                self.set_boot_info(keymint::BootInfo {
                     verified_boot_key: req.verified_boot_key,
                     device_boot_locked: req.device_boot_locked,
                     verified_boot_state,
@@ -952,14 +925,11 @@ impl<'a> KeyMintTa<'a> {
         if self.is_strongbox() {
             return Err(km_err!(Unimplemented, "root-of-trust retrieval not for StrongBox"));
         }
-        let payload = if let Some(info) = &self.boot_info {
-            info.clone()
-                .to_tagged_vec()
-                .map_err(|_e| km_err!(UnknownError, "Failed to CBOR-encode RootOfTrust"))
-        } else {
-            error!("RootOfTrust not known!");
-            Err(km_err!(HardwareNotYetAvailable, "root-of-trust unavailable"))
-        }?;
+        let payload = self
+            .boot_info()?
+            .clone()
+            .to_tagged_vec()
+            .map_err(|_e| km_err!(UnknownError, "Failed to CBOR-encode RootOfTrust"))?;
 
         let mac0 = coset::CoseMac0Builder::new()
             .protected(
@@ -989,7 +959,7 @@ impl<'a> KeyMintTa<'a> {
         })?;
         let payload =
             mac0.payload.ok_or_else(|| km_err!(InvalidArgument, "Missing payload in CoseMac0"))?;
-        let boot_info = BootInfo::from_tagged_slice(&payload)
+        let boot_info = keymint::BootInfo::from_tagged_slice(&payload)
             .map_err(|_e| km_err!(InvalidArgument, "Failed to CBOR-decode RootOfTrust"))?;
         if self.boot_info.is_none() {
             info!("Setting boot_info to TEE-provided {:?}", boot_info);
