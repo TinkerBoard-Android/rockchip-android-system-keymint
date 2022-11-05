@@ -1,6 +1,7 @@
 //! Functionality for remote key provisioning
 
 use super::KeyMintTa;
+use crate::RpcInfo;
 use alloc::string::{String, ToString};
 use alloc::{vec, vec::Vec};
 use kmr_common::{km_err, try_to_vec, Error};
@@ -49,6 +50,11 @@ impl<'a> KeyMintTa<'a> {
             SecurityLevel::Strongbox => "strongbox",
             l => return Err(km_err!(UnknownError, "security level {:?} not supported", l)),
         };
+
+        let (version, fused) = match &self.rpc_info {
+            RpcInfo::V2(rpc_info_v2) => (2, rpc_info_v2.fused),
+            RpcInfo::V3(rpc_info_v3) => (3, rpc_info_v3.fused),
+        };
         // The DeviceInfo.aidl file specifies that map keys should be ordered according
         // to RFC 7049 canonicalization rules, which are:
         // - shorter-encoded key < longer-encoded key
@@ -56,11 +62,11 @@ impl<'a> KeyMintTa<'a> {
         // Note that this is *different* than the ordering required in RFC 8949 s4.2.1.
         let info = cbor!({
             "brand" => brand,
-            "fused" => i32::from(self.rpc_info.fused),
+            "fused" => i32::from(fused),
             "model" => model,
             "device" => device,
             "product" => product,
-            "version" => self.rpc_info.version,
+            "version" => version,
             "vb_state" => vb_state,
             "os_version" => hal_info.os_version,
             "manufacturer" => manufacturer,
@@ -79,13 +85,22 @@ impl<'a> KeyMintTa<'a> {
     }
 
     pub(crate) fn get_rpc_hardware_info(&self) -> Result<HardwareInfo, Error> {
-        Ok(HardwareInfo {
-            version_number: self.hw_info.version_number,
-            rpc_author_name: self.hw_info.author_name.to_string(),
-            supported_eek_curve: EekCurve::Curve25519,
-            unique_id: Some(self.hw_info.unique_id.to_string()),
-            supported_num_keys_in_csr: MINIMUM_SUPPORTED_KEYS_IN_CSR,
-        })
+        match &self.rpc_info {
+            RpcInfo::V2(rpc_info_v2) => Ok(HardwareInfo {
+                version_number: 2,
+                rpc_author_name: rpc_info_v2.author_name.to_string(),
+                supported_eek_curve: rpc_info_v2.supported_eek_curve,
+                unique_id: Some(rpc_info_v2.unique_id.to_string()),
+                supported_num_keys_in_csr: 20,
+            }),
+            RpcInfo::V3(rpc_info_v3) => Ok(HardwareInfo {
+                version_number: 3,
+                rpc_author_name: rpc_info_v3.author_name.to_string(),
+                supported_eek_curve: EekCurve::None,
+                unique_id: Some(rpc_info_v3.unique_id.to_string()),
+                supported_num_keys_in_csr: rpc_info_v3.supported_num_of_keys_in_csr,
+            }),
+        }
     }
 
     pub(crate) fn generate_ecdsa_p256_keypair(

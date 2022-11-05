@@ -1,5 +1,8 @@
 //! KeyMint trusted application (TA) implementation.
 
+// TODO: remove after complete implementing RKP functionality.
+#![allow(dead_code)]
+#![allow(unused)]
 #![no_std]
 extern crate alloc;
 
@@ -7,6 +10,7 @@ use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::ToString, vec::Ve
 use core::cmp::Ordering;
 use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
+use device::DiceInfo;
 use kmr_common::{
     crypto::{self, RawKeyMaterial},
     get_bool_tag_value,
@@ -81,7 +85,7 @@ pub struct KeyMintTa<'a> {
     hw_info: HardwareInfo,
 
     /// Information about the implementation of the IRemotelyProvisionedComponent (IRPC) HAL.
-    rpc_info: RpcInfoV2,
+    rpc_info: RpcInfo,
 
     /**
      * State that is set after the TA starts, but latched thereafter.
@@ -102,6 +106,13 @@ pub struct KeyMintTa<'a> {
 
     /// Attestation ID information, fixed forever for a device, but retrieved on first use.
     attestation_id_info: RefCell<Option<Rc<AttestationIdInfo>>>,
+
+    // Public DICE artifacts (UDS certs and the DICE chain) included in the certificate signing
+    // requests (CSR) and the algorithm used to sign the CSR for IRemotelyProvisionedComponent
+    // (IRPC) HAL. Fixed for a device. Retrieved on first use.
+    //
+    // Note: This information is cached only in the implementations of IRPC HAL V3 and above.
+    dice_info: RefCell<Option<Rc<DiceInfo>>>,
 
     /// Whether the device is still in early-boot.
     in_early_boot: bool,
@@ -159,13 +170,32 @@ pub struct HardwareInfo {
 #[derive(Debug)]
 pub struct RpcInfoV2 {
     // Used in RpcHardwareInfo.aidl
-    pub version: i32,
     pub author_name: &'static str,
     pub supported_eek_curve: EekCurve,
     pub unique_id: &'static str,
     // Used as `DeviceInfo.fused`.
     // Indication of whether secure boot is enforced for the processor running this code.
     pub fused: bool,
+}
+
+/// Information required to construct the structures defined in RpcHardwareInfo.aidl
+/// and DeviceInfo.aidl, for IRemotelyProvisionedComponent (IRPC) HAL V3.
+#[derive(Debug)]
+pub struct RpcInfoV3 {
+    // Used in RpcHardwareInfo.aidl
+    pub author_name: &'static str,
+    pub unique_id: &'static str,
+    // Used as `DeviceInfo.fused`.
+    // Indication of whether secure boot is enforced for the processor running this code.
+    pub fused: bool,
+    pub supported_num_of_keys_in_csr: i32,
+}
+
+/// Enum to distinguish the set of information required for different versions of IRPC HAL
+/// implementations
+pub enum RpcInfo {
+    V2(RpcInfoV2),
+    V3(RpcInfoV3),
 }
 
 /// Information provided once at service start by the HAL service, describing
@@ -186,7 +216,7 @@ impl<'a> KeyMintTa<'a> {
     /// Create a new [`KeyMintTa`] instance.
     pub fn new(
         hw_info: HardwareInfo,
-        rpc_info: RpcInfoV2,
+        rpc_info: RpcInfo,
         imp: crypto::Implementation<'a>,
         dev: device::Implementation<'a>,
     ) -> Self {
@@ -216,6 +246,7 @@ impl<'a> KeyMintTa<'a> {
             hal_info: None,
             attestation_chain_info: RefCell::new(BTreeMap::new()),
             attestation_id_info: RefCell::new(None),
+            dice_info: RefCell::new(None),
         }
     }
 
@@ -487,6 +518,23 @@ impl<'a> KeyMintTa<'a> {
             }
         }
         self.attestation_id_info.borrow().as_ref().cloned()
+    }
+
+    /// Retrieve the DICE info for the device, if available.
+    fn get_dice_info(&self) -> Option<Rc<DiceInfo>> {
+        // DICE info is cached only for IRPC V3 and above.
+        if let RpcInfo::V2(_) = self.rpc_info {
+            return None;
+        }
+        if self.dice_info.borrow().is_none() {
+            // DICE info is not populated, but we have a trait method that
+            // may provide them.
+            match self.dev.rpc.get_dice_info(false) {
+                Ok(dice_info) => *self.dice_info.borrow_mut() = Some(Rc::new(dice_info)),
+                Err(e) => error!("Failed to retrieve DICE info: {:?}", e),
+            }
+        }
+        self.dice_info.borrow().as_ref().cloned()
     }
 
     /// Process a single serialized request, returning a serialized response.

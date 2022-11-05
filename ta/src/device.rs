@@ -178,8 +178,8 @@ pub trait RetrieveRpcArtifacts {
 
 /// Information about the DICE chain belonging to the implementation of the IRPC HAL.
 pub struct DiceInfo {
-    pub_dice_artifacts: PubDiceArtifacts,
-    signing_algorithm: CsrSigningAlgorithm,
+    pub pub_dice_artifacts: PubDiceArtifacts,
+    pub signing_algorithm: CsrSigningAlgorithm,
     // This is only relevant for IRPC HAL V2 when `test_mode` is true. This is ignored in all other
     // cases. The optional test CDI private key may be set here, if the device implementers
     // do not want to cache the test CDI private key across the calls to the `get_dice_info` and
