@@ -274,6 +274,10 @@ impl<'a> crate::KeyMintTa<'a> {
         attestation_key: Option<AttestationKey>,
         import_type: KeyImport,
     ) -> Result<KeyCreationResult, Error> {
+        if !self.in_early_boot && get_bool_tag_value!(params, EarlyBootOnly)? {
+            return Err(km_err!(EarlyBootEnded, "attempt to use EARLY_BOOT key after early boot"));
+        }
+
         let (mut chars, key_material) = tag::extract_key_import_characteristics(
             &self.imp,
             self.secure_storage_available(),

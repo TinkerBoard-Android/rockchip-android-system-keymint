@@ -14,8 +14,11 @@
 ;        - [Tag_ApplicationId, bstr] if required
 ;        - [Tag_ApplicationData, bstr] if required
 ;        - [Tag_RootOfTrust, bstr .cbor RootOfTrustInfo]
-;    - (if `EncryptedKeyBlob.secure_deletion_slot` is non-empty) CBOR serialization of the `SecureDeletionData`
-;      structure (held in secure storage) that is associated with the slot
+;    - (if secure storage is available) CBOR serialization of the `SecureDeletionData` structure, with:
+;        - `factory_reset_secret` always populated
+;        - `secure_deletion_secret` populated with:
+;           - all zeroes (if `EncryptedKeyBlob.secure_deletion_slot` is empty)
+;           - the contents of the slot (if `EncryptedKeyBlob.secure_deletion_slot` is non-empty)
 EncryptedKeyBlob = &(
     [0, EncryptedKeyBlobV1] ; Version::V1
 )

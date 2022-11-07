@@ -137,8 +137,11 @@ fn main() {
     ;        - [Tag_ApplicationId, bstr] if required\n\
     ;        - [Tag_ApplicationData, bstr] if required\n\
     ;        - [Tag_RootOfTrust, bstr .cbor RootOfTrustInfo]\n\
-    ;    - (if `EncryptedKeyBlob.secure_deletion_slot` is non-empty) CBOR serialization of the `SecureDeletionData`\n\
-    ;      structure (held in secure storage) that is associated with the slot",
+    ;    - (if secure storage is available) CBOR serialization of the `SecureDeletionData` structure, with:\n\
+    ;        - `factory_reset_secret` always populated\n\
+    ;        - `secure_deletion_secret` populated with:\n\
+    ;           - all zeroes (if `EncryptedKeyBlob.secure_deletion_slot` is empty)\n\
+    ;           - the contents of the slot (if `EncryptedKeyBlob.secure_deletion_slot` is non-empty)",
     );
     println!("{}", schema);
     schema.check();
