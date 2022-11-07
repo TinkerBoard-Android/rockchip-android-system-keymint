@@ -1,7 +1,7 @@
 //! Generation of certificates and attestation extensions.
 
 use crate::keys::SigningInfo;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{borrow::Cow, boxed::Box, vec::Vec};
 use core::time::Duration;
 use der::asn1::{BitStringRef, OctetStringRef, SetOfVec};
 use der::{
@@ -227,7 +227,6 @@ pub(crate) fn basic_constraints_ext_value(ca_required: bool) -> BasicConstraints
 ///     hardwareEnforced           AuthorizationList, # See below
 /// }
 /// ```
-///
 #[derive(Debug, Clone, Sequence, PartialEq)]
 pub struct AttestationExtension<'a> {
     attestation_version: i32,
@@ -238,8 +237,8 @@ pub struct AttestationExtension<'a> {
     attestation_challenge: &'a [u8],
     #[asn1(type = "OCTET STRING")]
     unique_id: &'a [u8],
-    sw_enforced: AuthorizationList,
-    hw_enforced: AuthorizationList,
+    sw_enforced: AuthorizationList<'a>,
+    hw_enforced: AuthorizationList<'a>,
 }
 
 impl<'a> AssociatedOid for AttestationExtension<'a> {
@@ -367,13 +366,10 @@ pub(crate) fn attestation_extension<'a>(
 ///     deviceUniqueAttestation    [720] EXPLICIT NULL OPTIONAL,
 /// }
 /// ```
-/// TODO (b/253906003): The shift from unidirectional (encode only) to bidirectional encoding has
-/// moved this to use owned types, which implies some potentially unnecessary (and unchecked)
-/// allocation in the encode path. Consider using Cow to get the best of both worlds.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthorizationList {
-    pub auths: Vec<KeyParam>,
-    pub keygen_params: Vec<KeyParam>,
+pub struct AuthorizationList<'a> {
+    pub auths: Cow<'a, [KeyParam]>,
+    pub keygen_params: Cow<'a, [KeyParam]>,
     pub rot_info: Option<KeyParam>,
     pub app_id: Option<KeyParam>,
 }
@@ -399,7 +395,7 @@ macro_rules! check_attestation_id {
     }
 }
 
-impl<'a> AuthorizationList {
+impl<'a> AuthorizationList<'a> {
     /// Build an `AuthorizationList` ready for serialization. This constructor will fail if device
     /// ID attestation is required but the relevant IDs are missing or mismatched.
     fn new(
@@ -436,8 +432,8 @@ impl<'a> AuthorizationList {
 
         let encoded_rot = if let Some(rot) = rot_info { Some(rot.to_vec()?) } else { None };
         Ok(Self {
-            auths: try_to_vec(auths)?,
-            keygen_params: try_to_vec(keygen_params)?,
+            auths: auths.into(),
+            keygen_params: keygen_params.into(),
             rot_info: encoded_rot.map(KeyParam::RootOfTrust),
             app_id: match app_id {
                 Some(app_id) => Some(KeyParam::AttestationApplicationId(try_to_vec(app_id)?)),
@@ -478,7 +474,12 @@ impl<'a> AuthorizationList {
                 _ => auths.try_push(param).map_err(der_alloc_err)?,
             }
         }
-        Ok(AuthorizationList { auths, keygen_params, rot_info: rot, app_id: attest_app_id })
+        Ok(AuthorizationList {
+            auths: auths.into(),
+            keygen_params: keygen_params.into(),
+            rot_info: rot,
+            app_id: attest_app_id,
+        })
     }
 }
 
@@ -546,7 +547,7 @@ macro_rules! process_authz_list_tags {
 }
 
 /// Implementation of [`der::DecodeValue`] which constructs an AuthorizationList from bytes.
-impl<'a> der::DecodeValue<'a> for AuthorizationList {
+impl<'a> der::DecodeValue<'a> for AuthorizationList<'a> {
     fn decode_value<R: der::Reader<'a>>(decoder: &mut R, header: der::Header) -> der::Result<Self> {
         // TODO: define a MAX_SIZE for AuthorizationList and check whether the actual length from
         // the length field of header is less than the MAX_SIZE
@@ -554,8 +555,8 @@ impl<'a> der::DecodeValue<'a> for AuthorizationList {
         // Check for an empty sequence
         if header.length.is_zero() {
             return Ok(AuthorizationList {
-                auths: Vec::new(),
-                keygen_params: Vec::new(),
+                auths: Vec::new().into(),
+                keygen_params: Vec::new().into(),
                 rot_info: None,
                 app_id: None,
             });
@@ -884,7 +885,7 @@ macro_rules! asn1_set_of_integer {
     } => {
         {
             let mut results = Vec::new();
-            for param in $params {
+            for param in $params.as_ref() {
                 if let KeyParam::$variant(v) = param {
                     results.try_push(v.clone()).map_err(der_alloc_err)?;
                 }
@@ -910,7 +911,7 @@ macro_rules! asn1_integer {
         $contents:ident, $params:expr, $variant:ident
     } => {
         {
-            if let Some(val) = get_opt_tag_value!($params, $variant).map_err(der_err)? {
+            if let Some(val) = get_opt_tag_value!($params.as_ref(), $variant).map_err(der_err)? {
                     $contents.try_push(Box::new(ExplicitTaggedValue {
                         tag: raw_tag_value(Tag::$variant),
                         val: *val as i64
@@ -924,7 +925,7 @@ macro_rules! asn1_integer_newtype {
         $contents:ident, $params:expr, $variant:ident
     } => {
         {
-            if let Some(val) = get_opt_tag_value!($params, $variant).map_err(der_err)? {
+            if let Some(val) = get_opt_tag_value!($params.as_ref(), $variant).map_err(der_err)? {
                     $contents.try_push(Box::new(ExplicitTaggedValue {
                         tag: raw_tag_value(Tag::$variant),
                         val: val.0 as i64
@@ -938,7 +939,7 @@ macro_rules! asn1_integer_datetime {
         $contents:ident, $params:expr, $variant:ident
     } => {
         {
-            if let Some(val) = get_opt_tag_value!($params, $variant).map_err(der_err)? {
+            if let Some(val) = get_opt_tag_value!($params.as_ref(), $variant).map_err(der_err)? {
                     $contents.try_push(Box::new(ExplicitTaggedValue {
                         tag: raw_tag_value(Tag::$variant),
                         val: val.ms_since_epoch
@@ -952,7 +953,7 @@ macro_rules! asn1_null {
         $contents:ident, $params:expr, $variant:ident
     } => {
         {
-            if get_bool_tag_value!($params, $variant).map_err(der_err)? {
+            if get_bool_tag_value!($params.as_ref(), $variant).map_err(der_err)? {
                     $contents.try_push(Box::new(ExplicitTaggedValue {
                         tag: raw_tag_value(Tag::$variant),
                         val: ()
@@ -966,7 +967,7 @@ macro_rules! asn1_octet_string {
         $contents:ident, $params:expr, $variant:ident
     } => {
         {
-            if let Some(val) = get_opt_tag_value!($params, $variant).map_err(der_err)? {
+            if let Some(val) = get_opt_tag_value!($params.as_ref(), $variant).map_err(der_err)? {
                     $contents.try_push(Box::new(ExplicitTaggedValue {
                         tag: raw_tag_value(Tag::$variant),
                         val: der::asn1::OctetStringRef::new(val)?,
@@ -976,40 +977,40 @@ macro_rules! asn1_octet_string {
     }
 }
 
-impl<'a> Sequence<'a> for AuthorizationList {
+impl<'a> Sequence<'a> for AuthorizationList<'a> {
     fn fields<F, T>(&self, f: F) -> der::Result<T>
     where
         F: FnOnce(&[&dyn Encode]) -> der::Result<T>,
     {
         let mut contents = Vec::<Box<dyn Encode>>::new();
 
-        asn1_set_of_integer!(contents, &self.auths, Purpose);
-        asn1_integer!(contents, &self.auths, Algorithm);
-        asn1_integer_newtype!(contents, &self.auths, KeySize);
-        asn1_set_of_integer!(contents, &self.auths, BlockMode);
-        asn1_set_of_integer!(contents, &self.auths, Digest);
-        asn1_set_of_integer!(contents, &self.auths, Padding);
-        asn1_null!(contents, &self.auths, CallerNonce);
-        asn1_integer!(contents, &self.auths, MinMacLength);
-        asn1_integer!(contents, &self.auths, EcCurve);
-        asn1_integer_newtype!(contents, &self.auths, RsaPublicExponent);
-        asn1_set_of_integer!(contents, &self.auths, RsaOaepMgfDigest);
-        asn1_null!(contents, &self.auths, RollbackResistance);
-        asn1_null!(contents, &self.auths, EarlyBootOnly);
-        asn1_integer_datetime!(contents, &self.auths, ActiveDatetime);
-        asn1_integer_datetime!(contents, &self.auths, OriginationExpireDatetime);
-        asn1_integer_datetime!(contents, &self.auths, UsageExpireDatetime);
-        asn1_integer!(contents, &self.auths, UsageCountLimit);
-        asn1_integer!(contents, &self.auths, UserSecureId);
-        asn1_null!(contents, &self.auths, NoAuthRequired);
-        asn1_integer!(contents, &self.auths, UserAuthType);
-        asn1_integer!(contents, &self.auths, AuthTimeout);
-        asn1_null!(contents, &self.auths, AllowWhileOnBody);
-        asn1_null!(contents, &self.auths, TrustedUserPresenceRequired);
-        asn1_null!(contents, &self.auths, TrustedConfirmationRequired);
-        asn1_null!(contents, &self.auths, UnlockedDeviceRequired);
-        asn1_integer_datetime!(contents, &self.auths, CreationDatetime);
-        asn1_integer!(contents, &self.auths, Origin);
+        asn1_set_of_integer!(contents, self.auths, Purpose);
+        asn1_integer!(contents, self.auths, Algorithm);
+        asn1_integer_newtype!(contents, self.auths, KeySize);
+        asn1_set_of_integer!(contents, self.auths, BlockMode);
+        asn1_set_of_integer!(contents, self.auths, Digest);
+        asn1_set_of_integer!(contents, self.auths, Padding);
+        asn1_null!(contents, self.auths, CallerNonce);
+        asn1_integer!(contents, self.auths, MinMacLength);
+        asn1_integer!(contents, self.auths, EcCurve);
+        asn1_integer_newtype!(contents, self.auths, RsaPublicExponent);
+        asn1_set_of_integer!(contents, self.auths, RsaOaepMgfDigest);
+        asn1_null!(contents, self.auths, RollbackResistance);
+        asn1_null!(contents, self.auths, EarlyBootOnly);
+        asn1_integer_datetime!(contents, self.auths, ActiveDatetime);
+        asn1_integer_datetime!(contents, self.auths, OriginationExpireDatetime);
+        asn1_integer_datetime!(contents, self.auths, UsageExpireDatetime);
+        asn1_integer!(contents, self.auths, UsageCountLimit);
+        asn1_integer!(contents, self.auths, UserSecureId);
+        asn1_null!(contents, self.auths, NoAuthRequired);
+        asn1_integer!(contents, self.auths, UserAuthType);
+        asn1_integer!(contents, self.auths, AuthTimeout);
+        asn1_null!(contents, self.auths, AllowWhileOnBody);
+        asn1_null!(contents, self.auths, TrustedUserPresenceRequired);
+        asn1_null!(contents, self.auths, TrustedConfirmationRequired);
+        asn1_null!(contents, self.auths, UnlockedDeviceRequired);
+        asn1_integer_datetime!(contents, self.auths, CreationDatetime);
+        asn1_integer!(contents, self.auths, Origin);
         // Root of trust info is a special case (not in key characteristics).
         if let Some(KeyParam::RootOfTrust(encoded_rot_info)) = &self.rot_info {
             contents
@@ -1019,8 +1020,8 @@ impl<'a> Sequence<'a> for AuthorizationList {
                 }))
                 .map_err(der_alloc_err)?;
         }
-        asn1_integer!(contents, &self.auths, OsVersion);
-        asn1_integer!(contents, &self.auths, OsPatchlevel);
+        asn1_integer!(contents, self.auths, OsVersion);
+        asn1_integer!(contents, self.auths, OsPatchlevel);
         // Attestation application ID is a special case (not in key characteristics).
         if let Some(KeyParam::AttestationApplicationId(app_id)) = &self.app_id {
             contents
@@ -1039,9 +1040,9 @@ impl<'a> Sequence<'a> for AuthorizationList {
         asn1_octet_string!(contents, &self.keygen_params, AttestationIdMeid);
         asn1_octet_string!(contents, &self.keygen_params, AttestationIdManufacturer);
         asn1_octet_string!(contents, &self.keygen_params, AttestationIdModel);
-        asn1_integer!(contents, &self.auths, VendorPatchlevel);
-        asn1_integer!(contents, &self.auths, BootPatchlevel);
-        asn1_null!(contents, &self.auths, DeviceUniqueAttestation);
+        asn1_integer!(contents, self.auths, VendorPatchlevel);
+        asn1_integer!(contents, self.auths, BootPatchlevel);
+        asn1_null!(contents, self.auths, DeviceUniqueAttestation);
 
         let ref_contents: Vec<&dyn Encode> = contents.iter().map(|v| v.as_ref()).collect();
         f(&ref_contents)
