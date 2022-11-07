@@ -182,7 +182,8 @@ impl<'a> KeyMintTa<'a> {
             imp,
             dev,
             in_early_boot: true,
-            // TODO: figure out whether an initial locked state is possible
+            // Note: Keystore currently doesn't trigger the `deviceLocked()` KeyMint entrypoint,
+            // so treat the device as not-locked at start-of-day.
             device_locked: RefCell::new(LockState::Unlocked),
             hmac_key: None,
             rot_challenge: [0; 16],

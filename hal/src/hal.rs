@@ -235,7 +235,14 @@ impl Fromm<wire::keymint::KeyParam> for keymint::KeyParameter::KeyParameter {
             }
             KeyParam::UserId(v) => (Tag::USER_ID, KeyParameterValue::Integer(v as i32)),
             KeyParam::UserAuthType(v) => {
-                (Tag::USER_AUTH_TYPE, KeyParameterValue::Integer(v as i32))
+                // Special case: auth type is a bitmask, so the Rust types use `u32` but the HAL
+                // type has an "enum".
+                (
+                    Tag::USER_AUTH_TYPE,
+                    KeyParameterValue::HardwareAuthenticatorType(
+                        keymint::HardwareAuthenticatorType::HardwareAuthenticatorType(v as i32),
+                    ),
+                )
             }
             KeyParam::AuthTimeout(v) => (Tag::AUTH_TIMEOUT, KeyParameterValue::Integer(v as i32)),
             KeyParam::OsVersion(v) => (Tag::OS_VERSION, KeyParameterValue::Integer(v as i32)),
@@ -420,6 +427,7 @@ macro_rules! value_of {
         if let keymint::KeyParameterValue::KeyParameterValue::$variant(v) = $val.value {
             Ok(v)
         } else {
+            error!("failed to convert parameter '{}' with value {:?}", stringify!($val), $val);
             Err(wire::ValueNotRecognized)
         }
     }
@@ -481,6 +489,13 @@ impl TryFromm<&keymint::KeyParameter::KeyParameter> for Option<KeyParam> {
                 Some(KeyParam::Origin(value_of!(val, Origin)?.try_innto()?))
             }
 
+            // Special case: although `Tag::USER_AUTH_TYPE` claims to have an associated enum, it's
+            // actually a bitmask rather than an enum.
+            keymint::Tag::Tag::USER_AUTH_TYPE => {
+                let val = value_of!(val, HardwareAuthenticatorType)?;
+                Some(KeyParam::UserAuthType(val.0 as u32))
+            }
+
             // `u32`-holding variants.
             keymint::Tag::Tag::KEY_SIZE => {
                 Some(KeyParam::KeySize(KeySizeInBits(value_of!(val, Integer)? as u32)))
@@ -495,9 +510,6 @@ impl TryFromm<&keymint::KeyParameter::KeyParameter> for Option<KeyParam> {
                 Some(KeyParam::UsageCountLimit(value_of!(val, Integer)? as u32))
             }
             keymint::Tag::Tag::USER_ID => Some(KeyParam::UserId(value_of!(val, Integer)? as u32)),
-            keymint::Tag::Tag::USER_AUTH_TYPE => {
-                Some(KeyParam::UserAuthType(value_of!(val, Integer)? as u32))
-            }
             keymint::Tag::Tag::AUTH_TIMEOUT => {
                 Some(KeyParam::AuthTimeout(value_of!(val, Integer)? as u32))
             }
