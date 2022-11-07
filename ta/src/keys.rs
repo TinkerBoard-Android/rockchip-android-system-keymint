@@ -43,7 +43,7 @@ pub struct SecureKeyWrapper<'a> {
     pub encrypted_transport_key: &'a [u8],
     #[asn1(type = "OCTET STRING")]
     pub initialization_vector: &'a [u8],
-    pub key_description: KeyDescription,
+    pub key_description: KeyDescription<'a>,
     #[asn1(type = "OCTET STRING")]
     pub encrypted_key: &'a [u8],
     #[asn1(type = "OCTET STRING")]
@@ -61,9 +61,9 @@ const SECURE_KEY_WRAPPER_VERSION: i32 = 0;
 /// }
 /// ```
 #[derive(Debug, Clone, Sequence)]
-pub struct KeyDescription {
+pub struct KeyDescription<'a> {
     pub key_format: i32,
-    pub key_params: cert::AuthorizationList,
+    pub key_params: cert::AuthorizationList<'a>,
 }
 
 /// Indication of whether key import has a secure wrapper.
@@ -468,7 +468,7 @@ impl<'a> crate::KeyMintTa<'a> {
         let keyblob::PlaintextKeyBlob { characteristics, key_material } = wrapping_key;
 
         // Decode the ASN.1 DER encoded `SecureKeyWrapper`.
-        let secure_key_wrapper = SecureKeyWrapper::from_der(wrapped_key_data)?;
+        let mut secure_key_wrapper = SecureKeyWrapper::from_der(wrapped_key_data)?;
 
         if secure_key_wrapper.version != SECURE_KEY_WRAPPER_VERSION {
             return Err(km_err!(InvalidArgument, "invalid version in Secure Key Wrapper."));
@@ -569,8 +569,12 @@ impl<'a> crate::KeyMintTa<'a> {
         imported_key_data.try_extend_from_slice(&op.update(secure_key_wrapper.tag)?)?;
         imported_key_data.try_extend_from_slice(&op.finish()?)?;
 
-        let mut imported_key_params = secure_key_wrapper.key_description.key_params.auths;
-        if let Some(secure_id) = get_opt_tag_value!(imported_key_params.clone(), UserSecureId)? {
+        // The `Cow::to_mut()` call will not clone, because `from_der()` invokes
+        // `AuthorizationList::decode_value()` which creates the owned variant.
+        let imported_key_params: &mut Vec<KeyParam> =
+            secure_key_wrapper.key_description.key_params.auths.to_mut();
+        if let Some(secure_id) = get_opt_tag_value!(&*imported_key_params, UserSecureId)? {
+            let secure_id = *secure_id;
             // If both the Password and Fingerprint bits are set in UserSecureId, the password SID
             // should be used, because biometric auth tokens contain both password and fingerprint
             // SIDs, but password auth tokens only contain the password SID.
@@ -597,7 +601,7 @@ impl<'a> crate::KeyMintTa<'a> {
             }
         };
         self.import_key(
-            &imported_key_params,
+            imported_key_params,
             KeyFormat::try_from(secure_key_wrapper.key_description.key_format).map_err(|_e| {
                 km_err!(
                     UnsupportedKeyFormat,
