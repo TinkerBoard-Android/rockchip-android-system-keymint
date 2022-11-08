@@ -222,8 +222,10 @@ impl<'a> KeyMintTa<'a> {
             .ok_or_else(|| km_err!(HardwareNotYetAvailable, "no boot info available"))
     }
 
-    /// Parse and decrypt an encrypted key blob.
-    fn keyblob_parse_decrypt(
+    /// Parse and decrypt an encrypted key blob, allowing through keys that require upgrade due to
+    /// patchlevel updates.  Keys that appear to be in a legacy format may still emit a
+    /// [`ErrorCode::KeyRequiresUpgrade`] error.
+    fn keyblob_parse_decrypt_backlevel(
         &self,
         key_blob: &[u8],
         params: &[KeyParam],
@@ -245,16 +247,6 @@ impl<'a> KeyMintTa<'a> {
         };
         let hidden = tag::hidden(params, self.root_of_trust()?)?;
         let sdd_slot = encrypted_keyblob.secure_deletion_slot();
-        let keyblob = self.keyblob_decrypt(encrypted_keyblob, hidden)?;
-        Ok((keyblob, sdd_slot))
-    }
-
-    /// Decrypt an encrypted key blob.
-    fn keyblob_decrypt(
-        &self,
-        encrypted_keyblob: keyblob::EncryptedKeyBlob,
-        hidden: Vec<KeyParam>,
-    ) -> Result<keyblob::PlaintextKeyBlob, Error> {
         let root_kek = self.root_kek(encrypted_keyblob.kek_context())?;
         let keyblob = keyblob::decrypt(
             match &self.dev.sdd_mgr {
@@ -267,8 +259,18 @@ impl<'a> KeyMintTa<'a> {
             encrypted_keyblob,
             hidden,
         )?;
-        let key_chars = keyblob.characteristics_at(self.hw_info.security_level)?;
+        Ok((keyblob, sdd_slot))
+    }
 
+    /// Parse and decrypt an encrypted key blob, detecting keys that require upgrade.
+    fn keyblob_parse_decrypt(
+        &self,
+        key_blob: &[u8],
+        params: &[KeyParam],
+    ) -> Result<(keyblob::PlaintextKeyBlob, Option<SecureDeletionSlot>), Error> {
+        let (keyblob, slot) = self.keyblob_parse_decrypt_backlevel(key_blob, params)?;
+
+        // Check all of the patchlevels and versions to see if key upgrade is required.
         fn check(v: &u32, curr: u32, name: &str) -> Result<(), Error> {
             match (*v).cmp(&curr) {
                 Ordering::Less => Err(km_err!(
@@ -289,6 +291,7 @@ impl<'a> KeyMintTa<'a> {
             }
         }
 
+        let key_chars = keyblob.characteristics_at(self.hw_info.security_level)?;
         for param in key_chars {
             match param {
                 KeyParam::OsVersion(v) => {
@@ -337,8 +340,7 @@ impl<'a> KeyMintTa<'a> {
                 _ => {}
             }
         }
-
-        Ok(keyblob)
+        Ok((keyblob, slot))
     }
 
     /// Generate a unique identifier for a keyblob.

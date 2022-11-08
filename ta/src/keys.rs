@@ -625,10 +625,12 @@ impl<'a> crate::KeyMintTa<'a> {
         upgrade_params: Vec<KeyParam>,
     ) -> Result<Vec<u8>, Error> {
         let (mut keyblob, sdd_slot) =
-            match self.keyblob_parse_decrypt(keyblob_to_upgrade, &upgrade_params) {
+            match self.keyblob_parse_decrypt_backlevel(keyblob_to_upgrade, &upgrade_params) {
                 Ok(v) => v,
                 Err(Error::Hal(ErrorCode::KeyRequiresUpgrade, _)) => {
-                    // This keyblob looks to be in a legacy format, so convert it.
+                    // Because `keyblob_parse_decrypt_backlevel` explicitly allows back-level
+                    // versioned keys, a `KeyRequiresUpgrade` error indicates that the keyblob looks
+                    // to be in legacy format.  Try to convert it.
                     let legacy_handler = self
                         .dev
                         .legacy_key
