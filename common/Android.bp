@@ -56,6 +56,9 @@ rust_test_host {
     defaults: [
         "kmr_common_defaults",
     ],
+    rustlibs: [
+        "libhex",
+    ],
     test_suites: ["general-tests"],
 }
 
