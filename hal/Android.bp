@@ -29,6 +29,7 @@ rust_defaults {
         "libbinder_rs",
         "libciborium",
         "libciborium_io",
+        "libhex",
         "libkmr_wire",
         "liblog_rust",
         "libregex",
