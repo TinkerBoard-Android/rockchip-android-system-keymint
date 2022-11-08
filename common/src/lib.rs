@@ -4,12 +4,10 @@
 extern crate alloc;
 
 use alloc::{
-    format,
     string::{String, ToString},
     vec::Vec,
 };
 use core::convert::From;
-use core::fmt::Write;
 use der::ErrorKind;
 use kmr_wire::{cbor, keymint::ErrorCode, CborError};
 
@@ -190,46 +188,4 @@ macro_rules! expect_err {
             $err_msg
         );
     };
-}
-
-/// Convert data to a hex string.
-pub fn hex_encode(data: &[u8]) -> String {
-    let mut result = String::new();
-    for byte in data {
-        let _ = &write!(result, "{:02x}", byte);
-    }
-    result
-}
-
-/// Convert a hex string to data.
-pub fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
-    let mut result = Vec::new();
-    let mut pending = 0u8;
-    for (idx, c) in hex.chars().enumerate() {
-        let nibble: u8 = match c {
-            '0' => 0,
-            '1' => 1,
-            '2' => 2,
-            '3' => 3,
-            '4' => 4,
-            '5' => 5,
-            '6' => 6,
-            '7' => 7,
-            '8' => 8,
-            '9' => 9,
-            'a' | 'A' => 0xa,
-            'b' | 'B' => 0xb,
-            'c' | 'C' => 0xc,
-            'd' | 'D' => 0xd,
-            'e' | 'E' => 0xe,
-            'f' | 'F' => 0xf,
-            _ => return Err(format!("char {} '{}' not a hex digit", idx, c)),
-        };
-        if idx % 2 == 0 {
-            pending = nibble << 4;
-        } else {
-            result.push(pending | nibble);
-        }
-    }
-    Ok(result)
 }

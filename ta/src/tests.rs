@@ -3,7 +3,6 @@
 use crate::{error_rsp, invalid_cbor_rsp_data, keys::SecureKeyWrapper};
 use alloc::vec::Vec;
 use der::{Decode, Encode};
-use kmr_common::{hex_decode, hex_encode};
 use kmr_wire::{
     keymint::{ErrorCode, KeyFormat, KeyParam, KeyPurpose},
     AsCborValue,
@@ -79,7 +78,7 @@ fn test_secure_key_wrapper() {
         "2560c70109ae67c030f00b98b512a670",
         // } SEQUENCE (SecureKeyWrapper)
     );
-    let encoded_bytes = hex_decode(encoded_str).unwrap();
+    let encoded_bytes = hex::decode(encoded_str).unwrap();
     let secure_key_wrapper = SecureKeyWrapper::from_der(&encoded_bytes).unwrap();
     assert_eq!(secure_key_wrapper.version, 0);
     let key_format: KeyFormat = secure_key_wrapper.key_description.key_format.try_into().unwrap();
@@ -189,9 +188,9 @@ fn test_key_description_encode_decode() {
                 // } end SEQUENCE (AuthorizationList)
                 // } end SEQUENCE (KeyDescription)
     );
-    let encoded_bytes = hex_decode(encoded_secure_key_wrapper).unwrap();
+    let encoded_bytes = hex::decode(encoded_secure_key_wrapper).unwrap();
     let secure_key_wrapper = SecureKeyWrapper::from_der(&encoded_bytes).unwrap();
     let key_description = secure_key_wrapper.key_description;
     let encoded_key_description_got = key_description.to_vec().unwrap();
-    assert_eq!(hex_encode(&encoded_key_description_got), encoded_key_description_want);
+    assert_eq!(hex::encode(&encoded_key_description_got), encoded_key_description_want);
 }

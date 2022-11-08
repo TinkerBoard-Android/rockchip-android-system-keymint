@@ -15,3 +15,6 @@ kmr-wire = "*"
 log = "^0.4"
 spki = { version = "0.6"}
 x509-cert = "0.1.0"
+
+[dev-dependencies]
+hex = "0.4.3"
