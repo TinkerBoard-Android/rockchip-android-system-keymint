@@ -13,7 +13,7 @@ struct TestChannel {
 
 impl TestChannel {
     fn new(rsp: &str) -> Self {
-        Self { req: Arc::new(Mutex::new(vec![])), rsp: hex_decode(rsp).unwrap() }
+        Self { req: Arc::new(Mutex::new(vec![])), rsp: hex::decode(rsp).unwrap() }
     }
     fn req_data(&self) -> Vec<u8> {
         self.req.lock().unwrap().clone()
@@ -52,7 +52,7 @@ fn test_method_roundtrip() {
         "80", // 0-arr (* KeyParameter)
         "80", // 0-arr (? AttestationKey)
     );
-    assert_eq!(channel.req_data(), hex_decode(want_req).unwrap());
+    assert_eq!(channel.req_data(), hex::decode(want_req).unwrap());
 
     assert_eq!(result.keyBlob, vec![0x01]);
     assert!(result.keyCharacteristics.is_empty());
@@ -77,44 +77,10 @@ fn test_method_err_roundtrip() {
         "80", // 0-arr (* KeyParameter)
         "80", // 0-arr (? AttestationKey)
     );
-    assert_eq!(channel.req_data(), hex_decode(want_req).unwrap());
+    assert_eq!(channel.req_data(), hex::decode(want_req).unwrap());
 
     assert!(result.is_err());
     let status = result.unwrap_err();
     assert_eq!(status.exception_code(), binder::ExceptionCode::SERVICE_SPECIFIC);
     assert_eq!(status.service_specific_error(), ErrorCode::UNSUPPORTED_PURPOSE.0);
-}
-
-/// Convert a hex string to data.
-// TODO: replace with hex::decode() if/when this is imported into Android
-pub fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
-    let mut result = Vec::new();
-    let mut pending = 0u8;
-    for (idx, c) in hex.chars().enumerate() {
-        let nibble: u8 = match c {
-            '0' => 0,
-            '1' => 1,
-            '2' => 2,
-            '3' => 3,
-            '4' => 4,
-            '5' => 5,
-            '6' => 6,
-            '7' => 7,
-            '8' => 8,
-            '9' => 9,
-            'a' | 'A' => 0xa,
-            'b' | 'B' => 0xb,
-            'c' | 'C' => 0xc,
-            'd' | 'D' => 0xd,
-            'e' | 'E' => 0xe,
-            'f' | 'F' => 0xf,
-            _ => return Err(format!("char {} '{}' not a hex digit", idx, c)),
-        };
-        if idx % 2 == 0 {
-            pending = nibble << 4;
-        } else {
-            result.push(pending | nibble);
-        }
-    }
-    Ok(result)
 }
