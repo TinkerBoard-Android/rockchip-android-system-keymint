@@ -220,7 +220,7 @@ impl<'a> crate::KeyMintTa<'a> {
         combined_input.extend_from_slice(app_id);
         combined_input.push(if get_bool_tag_value!(params, ResetSinceIdRotation)? { 1 } else { 0 });
 
-        let hbk = self.dev.keys.unique_id_hbk(Some(self.imp.ckdf))?;
+        let hbk = self.dev.keys.unique_id_hbk(self.imp.ckdf)?;
 
         let mut hmac_op = self.imp.hmac.begin(hbk.into(), Digest::Sha256)?;
         hmac_op.update(&combined_input)?;
