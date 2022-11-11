@@ -8,7 +8,7 @@
 ; - input keying material = a root key held in hardware
 ; - salt = absent
 ; - info = the following three or four chunks of context data concatenated:
-;    - content of `EncryptedKeyMaterial.key_derivation_input` (a random nonce)
+;    - content of `EncryptedKeyBlob.key_derivation_input` (a random nonce)
 ;    - CBOR-serialization of `EncryptedKeyBlob.characteristics`
 ;    - CBOR-serialized array of additional hidden `KeyParam` items associated with the key, specifically:
 ;        - [Tag_ApplicationId, bstr] if required
