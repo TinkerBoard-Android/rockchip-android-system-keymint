@@ -8,7 +8,10 @@ use kmr_wire::{
     cbor,
     cbor::cbor,
     keymint::{SecurityLevel, VerifiedBootState},
-    rpc::{DeviceInfo, EekCurve, HardwareInfo, MacedPublicKey, ProtectedData},
+    rpc::{
+        DeviceInfo, EekCurve, HardwareInfo, MacedPublicKey, ProtectedData,
+        MINIMUM_SUPPORTED_KEYS_IN_CSR,
+    },
     CborError,
 };
 
@@ -53,11 +56,11 @@ impl<'a> KeyMintTa<'a> {
         // Note that this is *different* than the ordering required in RFC 8949 s4.2.1.
         let info = cbor!({
             "brand" => brand,
-            "fused" => i32::from(self.hw_info.fused),
+            "fused" => i32::from(self.rpc_info.fused),
             "model" => model,
             "device" => device,
             "product" => product,
-            "version" => 2,
+            "version" => self.rpc_info.version,
             "vb_state" => vb_state,
             "os_version" => hal_info.os_version,
             "manufacturer" => manufacturer,
@@ -81,7 +84,7 @@ impl<'a> KeyMintTa<'a> {
             rpc_author_name: self.hw_info.author_name.to_string(),
             supported_eek_curve: EekCurve::Curve25519,
             unique_id: Some(self.hw_info.unique_id.to_string()),
-            supported_num_keys_in_csr: 20,
+            supported_num_keys_in_csr: MINIMUM_SUPPORTED_KEYS_IN_CSR,
         })
     }
 

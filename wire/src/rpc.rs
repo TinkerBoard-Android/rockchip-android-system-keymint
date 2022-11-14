@@ -22,6 +22,9 @@ pub enum ErrorCode {
     Removed = 6,
 }
 
+/// The default value for the minimum number of keys supported in a CSR.
+pub const MINIMUM_SUPPORTED_KEYS_IN_CSR: i32 = 20;
+
 #[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
 pub struct HardwareInfo {
     pub version_number: i32,

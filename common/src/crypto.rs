@@ -445,7 +445,7 @@ pub fn nonce(
 const HKDF_EMPTY_SALT: [u8; SHA256_DIGEST_LEN] = [0; SHA256_DIGEST_LEN];
 
 /// Convenience wrapper to perform one-shot HMAC-SHA256.
-fn hmac_sha256(hmac: &dyn Hmac, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn hmac_sha256(hmac: &dyn Hmac, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Error> {
     let mut op = hmac.begin(hmac::Key(crate::try_to_vec(key)?).into(), Digest::Sha256)?;
     op.update(data)?;
     op.finish()

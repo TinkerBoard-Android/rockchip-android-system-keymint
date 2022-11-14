@@ -19,6 +19,7 @@ use kmr_wire::{
         Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyMintHardwareInfo, KeyOrigin,
         KeyParam, SecurityLevel, VerifiedBootState,
     },
+    rpc::EekCurve,
     secureclock::{TimeStampToken, Timestamp},
     sharedsecret::SharedSecretParameters,
     *,
@@ -78,6 +79,9 @@ pub struct KeyMintTa<'a> {
 
     /// Information about this particular KeyMint implementation's hardware.
     hw_info: HardwareInfo,
+
+    /// Information about the implementation of the IRemotelyProvisionedComponent (IRPC) HAL.
+    rpc_info: RpcInfoV2,
 
     /**
      * State that is set after the TA starts, but latched thereafter.
@@ -148,9 +152,20 @@ pub struct HardwareInfo {
     pub unique_id: &'static str,
     // The `timestamp_token_required` field in `KeyMintHardwareInfo` is skipped here because it gets
     // set depending on whether a local clock is available.
+}
 
+/// Information required to construct the structures defined in RpcHardwareInfo.aidl
+/// and DeviceInfo.aidl, for IRemotelyProvisionedComponent (IRPC) HAL V2.
+#[derive(Debug)]
+pub struct RpcInfoV2 {
+    // Used in RpcHardwareInfo.aidl
+    pub version: i32,
+    pub author_name: &'static str,
+    pub supported_eek_curve: EekCurve,
+    pub unique_id: &'static str,
+    // Used as `DeviceInfo.fused`.
     // Indication of whether secure boot is enforced for the processor running this code.
-    pub fused: bool, // Used as `DeviceInfo.fused` for RKP
+    pub fused: bool,
 }
 
 /// Information provided once at service start by the HAL service, describing
@@ -171,6 +186,7 @@ impl<'a> KeyMintTa<'a> {
     /// Create a new [`KeyMintTa`] instance.
     pub fn new(
         hw_info: HardwareInfo,
+        rpc_info: RpcInfoV2,
         imp: crypto::Implementation<'a>,
         dev: device::Implementation<'a>,
     ) -> Self {
@@ -194,6 +210,7 @@ impl<'a> KeyMintTa<'a> {
             presence_required_op: None,
             shared_secret_params: None,
             hw_info,
+            rpc_info,
             boot_info: None,
             rot_data: None,
             hal_info: None,
