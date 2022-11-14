@@ -2,8 +2,8 @@
 
 use alloc::vec::Vec;
 use kmr_common::{
-    crypto, crypto::aes, crypto::KeyMaterial, crypto::RawKeyMaterial, keyblob, km_err, log_unimpl,
-    unimpl, Error,
+    crypto, crypto::aes, crypto::KeyMaterial, crypto::RawKeyMaterial, keyblob, log_unimpl, unimpl,
+    Error,
 };
 use kmr_wire::keymint;
 use log::error;
@@ -55,13 +55,10 @@ pub trait RetrieveKeyMaterial {
     fn kak(&self) -> Result<aes::Key, Error>;
 
     /// Retrieve the hardware backed secret used for UNIQUE_ID generation.
-    fn unique_id_hbk(&self, ckdf: Option<&dyn crypto::Ckdf>) -> Result<crypto::hmac::Key, Error> {
-        if let Some(ckdf) = ckdf {
-            let unique_id_label = b"UniqueID HBK 32B";
-            ckdf.ckdf(&self.kak()?.into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
-        } else {
-            Err(km_err!(Unimplemented, "default impl requires ckdf implementation"))
-        }
+    fn unique_id_hbk(&self, ckdf: &dyn crypto::Ckdf) -> Result<crypto::hmac::Key, Error> {
+        // By default, use CKDF on the key agreement secret to derive a key.
+        let unique_id_label = b"UniqueID HBK 32B";
+        ckdf.ckdf(&self.kak()?.into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
     }
 }
 
