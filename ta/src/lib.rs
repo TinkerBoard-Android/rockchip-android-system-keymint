@@ -9,6 +9,7 @@ use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
 use kmr_common::{
     crypto::{self, RawKeyMaterial},
+    get_bool_tag_value,
     keyblob::{self, RootOfTrustInfo, SecureDeletionSlot},
     km_err, tag, vec_try, vec_try_with_capacity, Error, FallibleAllocExt,
 };
@@ -991,6 +992,12 @@ impl<'a> KeyMintTa<'a> {
             // Parse and decrypt the keyblob. Note that there is no way to provide extra hidden
             // params on the API.
             let (keyblob, _) = self.keyblob_parse_decrypt(keyblob, &[])?;
+
+            // Check that the keyblob is indeed a storage key.
+            let chars = keyblob.characteristics_at(self.hw_info.security_level)?;
+            if !get_bool_tag_value!(chars, StorageKey)? {
+                return Err(km_err!(InvalidArgument, "attempting to convert non-storage key"));
+            }
 
             // Now that we've got the key material, use a device-specific method to re-wrap it
             // with an ephemeral key.
