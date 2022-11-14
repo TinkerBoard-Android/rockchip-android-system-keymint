@@ -935,6 +935,9 @@ pub fn check_begin_params(
             purpose
         ));
     }
+    if get_bool_tag_value!(chars, StorageKey)? {
+        return Err(km_err!(StorageKeyUnsupported, "attempt to use storage key",));
+    }
     let nonce = get_opt_tag_value!(params, Nonce)?;
     if get_bool_tag_value!(chars, CallerNonce)? {
         // Caller-provided nonces are allowed.

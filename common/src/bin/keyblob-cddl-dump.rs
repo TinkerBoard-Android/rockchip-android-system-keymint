@@ -131,7 +131,7 @@ fn main() {
     ; - input keying material = a root key held in hardware\n\
     ; - salt = absent\n\
     ; - info = the following three or four chunks of context data concatenated:\n\
-    ;    - content of `EncryptedKeyMaterial.key_derivation_input` (a random nonce)\n\
+    ;    - content of `EncryptedKeyBlob.key_derivation_input` (a random nonce)\n\
     ;    - CBOR-serialization of `EncryptedKeyBlob.characteristics`\n\
     ;    - CBOR-serialized array of additional hidden `KeyParam` items associated with the key, specifically:\n\
     ;        - [Tag_ApplicationId, bstr] if required\n\
