@@ -1115,13 +1115,19 @@ fn op_error_rsp(op: KeyMintOperation, err: Error) -> PerformOpResponse {
                 error!("encountered non-RKP error on RKP method! {:?}", err);
                 rpc::ErrorCode::Failed
             }
-            Error::Rpc(e, _) => e,
+            Error::Rpc(e, err_msg) => {
+                error!("Returning error code: {:?} in the response due to: {}", e, err_msg);
+                e
+            }
         };
         error_rsp(rpc_err as i32)
     } else {
         let hal_err = match err {
             Error::Cbor(_) | Error::Der(_) => ErrorCode::InvalidArgument,
-            Error::Hal(e, _) => e,
+            Error::Hal(e, err_msg) => {
+                error!("Returning error code: {:?} in the response due to: {}", e, err_msg);
+                e
+            }
             Error::Rpc(_, _) => {
                 error!("encountered RKP error on non-RKP method! {:?}", err);
                 ErrorCode::UnknownError

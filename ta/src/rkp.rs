@@ -1,20 +1,39 @@
 //! Functionality for remote key provisioning
 
 use super::KeyMintTa;
+use crate::coset::{iana, CborSerializable, CoseKeyBuilder, CoseMac0Builder, HeaderBuilder};
 use crate::RpcInfo;
 use alloc::string::{String, ToString};
 use alloc::{vec, vec::Vec};
-use kmr_common::{km_err, try_to_vec, Error};
+use der::{asn1::OctetString, Decode};
+use kmr_common::crypto::{ec::CoseKeyPurpose, KeyMaterial};
+use kmr_common::{km_err, rpc_err, try_to_vec, Error, FallibleAllocExt};
 use kmr_wire::{
     cbor,
     cbor::cbor,
-    keymint::{SecurityLevel, VerifiedBootState},
+    keymint::{
+        Algorithm, DateTime, Digest, EcCurve, KeyCreationResult, KeyParam, KeyPurpose,
+        SecurityLevel, VerifiedBootState,
+    },
     rpc::{
         DeviceInfo, EekCurve, HardwareInfo, MacedPublicKey, ProtectedData,
         MINIMUM_SUPPORTED_KEYS_IN_CSR,
     },
+    types::KeySizeInBits,
     CborError,
 };
+use x509_cert::Certificate;
+
+const RPC_P256_KEYGEN_PARAMS: [KeyParam; 8] = [
+    KeyParam::Purpose(KeyPurpose::AttestKey),
+    KeyParam::Algorithm(Algorithm::Ec),
+    KeyParam::KeySize(KeySizeInBits(256)),
+    KeyParam::EcCurve(EcCurve::P256),
+    KeyParam::NoAuthRequired,
+    KeyParam::Digest(Digest::Sha256),
+    KeyParam::CertificateNotBefore(DateTime { ms_since_epoch: 0 }),
+    KeyParam::CertificateNotAfter(DateTime { ms_since_epoch: 253402300799000 }),
+];
 
 impl<'a> KeyMintTa<'a> {
     pub(crate) fn rpc_device_info(&self) -> Result<Vec<u8>, Error> {
@@ -91,7 +110,7 @@ impl<'a> KeyMintTa<'a> {
                 rpc_author_name: rpc_info_v2.author_name.to_string(),
                 supported_eek_curve: rpc_info_v2.supported_eek_curve,
                 unique_id: Some(rpc_info_v2.unique_id.to_string()),
-                supported_num_keys_in_csr: 20,
+                supported_num_keys_in_csr: MINIMUM_SUPPORTED_KEYS_IN_CSR,
             }),
             RpcInfo::V3(rpc_info_v3) => Ok(HardwareInfo {
                 version_number: 3,
@@ -104,10 +123,36 @@ impl<'a> KeyMintTa<'a> {
     }
 
     pub(crate) fn generate_ecdsa_p256_keypair(
-        &self,
-        _test_mode: bool,
+        &mut self,
+        mut test_mode: bool,
     ) -> Result<(MacedPublicKey, Vec<u8>), Error> {
-        Err(km_err!(Unimplemented, "TODO: GenerateEcdsaP256KeyPair"))
+        if let RpcInfo::V3(_) = self.rpc_info {
+            test_mode = false;
+        }
+
+        let (key_material, chars) = self.generate_key_material(&RPC_P256_KEYGEN_PARAMS)?;
+
+        let pub_cose_key = match key_material {
+            KeyMaterial::Ec(curve, curve_type, ref key) => key.public_cose_key(
+                self.imp.ec,
+                curve,
+                curve_type,
+                CoseKeyPurpose::Sign,
+                None,
+                test_mode,
+            )?,
+            _ => return Err(km_err!(InvalidKeyBlob, "expected key material of type variant EC.")),
+        };
+        let pub_cose_key_encoded = pub_cose_key.to_vec().map_err(CborError::from)?;
+        let maced_pub_key =
+            build_maced_pub_key(pub_cose_key_encoded, |data| -> Result<Vec<u8>, Error> {
+                self.dev.rpc.compute_hmac_sha256(self.imp.hmac, data)
+            })?;
+
+        let key_result =
+            self.finish_keyblob_creation(&RPC_P256_KEYGEN_PARAMS, None, chars, key_material)?;
+
+        Ok((MacedPublicKey { maced_key: maced_pub_key }, key_result.key_blob))
     }
 
     pub(crate) fn generate_cert_req(
@@ -117,6 +162,9 @@ impl<'a> KeyMintTa<'a> {
         _eek_chain: &[u8],
         _challenge: &[u8],
     ) -> Result<(DeviceInfo, ProtectedData, Vec<u8>), Error> {
+        if let RpcInfo::V3(_) = self.rpc_info {
+            return Err(rpc_err!(Removed, "generate_cert_req is not supported in IRPC V3 HAL."));
+        }
         let _device_info = self.rpc_device_info()?;
         Err(km_err!(Unimplemented, "TODO: GenerateCertificateRequest"))
     }
@@ -126,6 +174,26 @@ impl<'a> KeyMintTa<'a> {
         _keys_to_sign: Vec<MacedPublicKey>,
         _challenge: &[u8],
     ) -> Result<Vec<u8>, Error> {
+        if let RpcInfo::V2(_) = self.rpc_info {
+            return Err(km_err!(
+                Unimplemented,
+                "generate_cert_req_v2 is not implemented for IRPC V2 HAL."
+            ));
+        }
         Err(km_err!(Unimplemented, "TODO: GenerateCertificateRequestV2"))
     }
+}
+
+/// Helper function to construct `MacedPublicKey` in MacedPublicKey.aidl
+fn build_maced_pub_key<F>(pub_cose_key: Vec<u8>, compute_mac: F) -> Result<Vec<u8>, Error>
+where
+    F: FnOnce(&[u8]) -> Result<Vec<u8>, Error>,
+{
+    let protected = HeaderBuilder::new().algorithm(iana::Algorithm::HMAC_256_256).build();
+    let cose_mac_0 = CoseMac0Builder::new()
+        .protected(protected)
+        .payload(pub_cose_key)
+        .try_create_tag(&[], compute_mac)?
+        .build();
+    Ok(cose_mac_0.to_vec().map_err(CborError::from)?)
 }
