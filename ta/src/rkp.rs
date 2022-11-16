@@ -84,6 +84,7 @@ impl<'a> KeyMintTa<'a> {
             rpc_author_name: self.hw_info.author_name.to_string(),
             supported_eek_curve: keymint::RpcEekCurve::Curve25519,
             unique_id: Some(self.hw_info.unique_id.to_string()),
+            supported_num_keys_in_csr: 20,
         })
     }
 

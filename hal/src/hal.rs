@@ -204,6 +204,7 @@ impl Fromm<wire::keymint::RpcHardwareInfo> for rkp::RpcHardwareInfo::RpcHardware
             rpcAuthorName: val.rpc_author_name,
             supportedEekCurve: val.supported_eek_curve as i32,
             uniqueId: val.unique_id,
+            supportedNumKeysInCsr: val.supported_num_keys_in_csr,
         }
     }
 }
