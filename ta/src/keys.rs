@@ -318,9 +318,11 @@ impl<'a> crate::KeyMintTa<'a> {
         };
         let attest_keyblob;
         let mut certificate_chain = Vec::new();
-        if let Some(spki) =
-            keyblob.key_material.subject_public_key_info(&mut Vec::<u8>::new(), self.imp.ec)?
-        {
+        if let Some(spki) = keyblob.key_material.subject_public_key_info(
+            &mut Vec::<u8>::new(),
+            self.imp.ec,
+            self.imp.rsa,
+        )? {
             // Asymmetric keys return the public key inside an X.509 certificate.
             // Need to determine:
             // - a key to sign the cert with (may be absent), together with any associated
