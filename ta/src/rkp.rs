@@ -56,7 +56,7 @@ impl<'a> KeyMintTa<'a> {
         // Note that this is *different* than the ordering required in RFC 8949 s4.2.1.
         let info = cbor!({
             "brand" => brand,
-            "fused" => if self.hw_info.fused { 1 } else { 0 },
+            "fused" => i32::from(self.hw_info.fused),
             "model" => model,
             "device" => device,
             "product" => product,
