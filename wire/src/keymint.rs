@@ -998,6 +998,7 @@ pub struct RpcHardwareInfo {
     pub rpc_author_name: String,
     pub supported_eek_curve: RpcEekCurve,
     pub unique_id: Option<String>,
+    pub supported_num_keys_in_csr: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]

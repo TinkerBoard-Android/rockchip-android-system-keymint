@@ -291,6 +291,7 @@ RpcHardwareInfo = [
     rpc_author_name: tstr,
     supported_eek_curve: RpcEekCurve,
     unique_id: [? tstr],
+    supported_num_keys_in_csr: int,
 ]
 TimeStampToken = [
     challenge: int,
