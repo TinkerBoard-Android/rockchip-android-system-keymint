@@ -218,7 +218,7 @@ impl<'a> crate::KeyMintTa<'a> {
         let mut combined_input = vec_try_with_capacity!(datetime_data.len() + app_id.len() + 1)?;
         combined_input.extend_from_slice(&datetime_data[..]);
         combined_input.extend_from_slice(app_id);
-        combined_input.push(if get_bool_tag_value!(params, ResetSinceIdRotation)? { 1 } else { 0 });
+        combined_input.push(u8::from(get_bool_tag_value!(params, ResetSinceIdRotation)?));
 
         let hbk = self.dev.keys.unique_id_hbk(self.imp.ckdf)?;
 
