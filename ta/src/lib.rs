@@ -396,11 +396,25 @@ impl<'a> KeyMintTa<'a> {
     /// Configure the boot-specific root of trust info.  KeyMint implementors should call this
     /// method when this information arrives from the bootloader (which happens in an
     /// implementation-specific manner).
-    pub fn set_boot_info(&mut self, boot_info: keymint::BootInfo) {
+    pub fn set_boot_info(&mut self, boot_info: keymint::BootInfo) -> Result<(), Error> {
         if !self.in_early_boot {
             error!("Rejecting attempt to set boot info {:?} after early boot", boot_info);
         }
-        if self.boot_info.is_none() {
+        if let Some(existing_boot_info) = &self.boot_info {
+            if *existing_boot_info == boot_info {
+                warn!(
+                    "Boot info already set, ignoring second attempt to set same values {:?}",
+                    boot_info
+                );
+            } else {
+                return Err(km_err!(
+                    InvalidArgument,
+                    "attempt to set boot info to {:?} but already set to {:?}",
+                    boot_info,
+                    existing_boot_info
+                ));
+            }
+        } else {
             info!("Setting boot_info to {:?}", boot_info);
             let rot_info = RootOfTrustInfo {
                 verified_boot_key: boot_info.verified_boot_key,
@@ -410,15 +424,11 @@ impl<'a> KeyMintTa<'a> {
             };
             self.boot_info = Some(boot_info);
             self.rot_data =
-                Some(rot_info.into_vec().unwrap_or_else(|_| {
-                    b"Internal error! Failed to encode root-of-trust".to_vec()
-                }));
-        } else {
-            warn!(
-                "Boot info already set to {:?}, ignoring new values {:?}",
-                self.boot_info, boot_info
-            );
+                Some(rot_info.into_vec().map_err(|e| {
+                    km_err!(UnknownError, "failed to encode root-of-trust: {:?}", e)
+                })?);
         }
+        Ok(())
     }
 
     /// Configure the HAL-derived information, learnt from the userspace
@@ -498,16 +508,18 @@ impl<'a> KeyMintTa<'a> {
                     Ok(state) => state,
                     Err(e) => return op_error_rsp(SetBootInfoRequest::CODE, Error::Cbor(e)),
                 };
-                self.set_boot_info(keymint::BootInfo {
+                match self.set_boot_info(keymint::BootInfo {
                     verified_boot_key: req.verified_boot_key,
                     device_boot_locked: req.device_boot_locked,
                     verified_boot_state,
                     verified_boot_hash: req.verified_boot_hash,
                     boot_patchlevel: req.boot_patchlevel,
-                });
-                PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::SetBootInfo(SetBootInfoResponse {})),
+                }) {
+                    Ok(_) => PerformOpResponse {
+                        error_code: ErrorCode::Ok,
+                        rsp: Some(PerformOpRsp::SetBootInfo(SetBootInfoResponse {})),
+                    },
+                    Err(e) => op_error_rsp(SetBootInfoRequest::CODE, e),
                 }
             }
             PerformOpReq::SetHalInfo(req) => {
