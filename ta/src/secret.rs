@@ -1,8 +1,9 @@
 //! TA functionality for shared secret negotiation.
 
-use alloc::vec::Vec;
-use kmr_common::{km_err, vec_try, Error, FallibleAllocExt};
-use kmr_wire::sharedsecret::SharedSecretParameters;
+use crate::device::DeviceHmac;
+use alloc::{boxed::Box, vec::Vec};
+use kmr_common::{crypto, crypto::hmac, km_err, vec_try, Error, FallibleAllocExt};
+use kmr_wire::{keymint::Digest, sharedsecret::SharedSecretParameters};
 use log::info;
 
 impl<'a> crate::KeyMintTa<'a> {
@@ -26,12 +27,18 @@ impl<'a> crate::KeyMintTa<'a> {
         };
 
         let context = shared_secret_context(params, local_params)?;
-        self.hmac_key = Some(self.imp.ckdf.ckdf(
+        let key = hmac::Key(self.imp.ckdf.ckdf(
             &self.dev.keys.kak()?.into(),
             kmr_wire::sharedsecret::KEY_AGREEMENT_LABEL.as_bytes(),
             &[&context],
             kmr_common::crypto::SHA256_DIGEST_LEN,
         )?);
+
+        // Potentially hand the negotiated HMAC key off to hardware.
+        self.device_hmac = Some(self.dev.keys.hmac_key_agreed(&key).unwrap_or_else(|| {
+            // Key not installed into hardware, so build & use a local impl.
+            Box::new(SoftDeviceHmac { key })
+        }));
         self.device_hmac(kmr_wire::sharedsecret::KEY_CHECK_LABEL.as_bytes())
     }
 }
@@ -55,5 +62,18 @@ pub fn shared_secret_context(
         Err(km_err!(InvalidArgument, "shared secret params missing local value"))
     } else {
         Ok(result)
+    }
+}
+
+/// Device HMAC implementation that holds the HMAC key in memory.
+struct SoftDeviceHmac {
+    key: crypto::hmac::Key,
+}
+
+impl DeviceHmac for SoftDeviceHmac {
+    fn hmac(&self, imp: &dyn crypto::Hmac, data: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut hmac_op = imp.begin(self.key.clone().into(), Digest::Sha256)?;
+        hmac_op.update(data)?;
+        hmac_op.finish()
     }
 }

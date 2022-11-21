@@ -3,7 +3,7 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::{collections::BTreeMap, rc::Rc, string::ToString, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::ToString, vec::Vec};
 use core::cmp::Ordering;
 use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
@@ -102,8 +102,8 @@ pub struct KeyMintTa<'a> {
     /// Whether the device is still in early-boot.
     in_early_boot: bool,
 
-    /// Negotiated key for checking HMAC-ed data.
-    hmac_key: Option<Vec<u8>>,
+    /// Device HMAC implementation which uses the `ISharedSecret` negotiated key.
+    device_hmac: Option<Box<dyn device::DeviceHmac>>,
 
     /**
      * State that changes during operation.
@@ -186,7 +186,7 @@ impl<'a> KeyMintTa<'a> {
             // Note: Keystore currently doesn't trigger the `deviceLocked()` KeyMint entrypoint,
             // so treat the device as not-locked at start-of-day.
             device_locked: RefCell::new(LockState::Unlocked),
-            hmac_key: None,
+            device_hmac: None,
             rot_challenge: [0; 16],
             // Work around Rust limitation that `vec![None; n]` doesn't work.
             operations: (0..max_operations).map(|_| None).collect(),
@@ -1039,17 +1039,13 @@ impl<'a> KeyMintTa<'a> {
 
     /// Generate an HMAC-SHA256 value over the data using the device's HMAC key (if available).
     fn device_hmac(&self, data: &[u8]) -> Result<Vec<u8>, Error> {
-        let hmac_key = match &self.hmac_key {
-            Some(k) => k,
+        match &self.device_hmac {
+            Some(traitobj) => traitobj.hmac(self.imp.hmac, data),
             None => {
                 error!("HMAC requested but no key available!");
-                return Err(km_err!(HardwareNotYetAvailable, "HMAC key not agreed"));
+                Err(km_err!(HardwareNotYetAvailable, "HMAC key not agreed"))
             }
-        };
-        let mut hmac_op =
-            self.imp.hmac.begin(crypto::hmac::Key(hmac_key.clone()).into(), Digest::Sha256)?;
-        hmac_op.update(data)?;
-        hmac_op.finish()
+        }
     }
 
     /// Verify an HMAC-SHA256 value over the data using the device's HMAC key (if available).

@@ -1,6 +1,6 @@
 //! Traits representing access to device-specific information and functionality.
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use kmr_common::{
     crypto, crypto::aes, crypto::KeyMaterial, crypto::RawKeyMaterial, keyblob, log_unimpl, unimpl,
     Error,
@@ -37,8 +37,8 @@ pub struct Implementation<'a> {
     pub legacy_key: Option<&'a mut dyn keyblob::LegacyKeyHandler>,
 }
 
-/// Retrieval of key material.  The caller is expected to drop the key material as soon as it is
-/// done with it.
+/// Functionality related to retrieval of device-specific key material, and its subsequent use.
+/// The caller is generally expected to drop the key material as soon as it is done with it.
 pub trait RetrieveKeyMaterial {
     /// Retrieve the root key used for derivation of a per-keyblob key encryption key (KEK), passing
     /// in any opaque context.
@@ -54,12 +54,24 @@ pub trait RetrieveKeyMaterial {
     /// Retrieve the key agreement key used for shared secret negotiation.
     fn kak(&self) -> Result<aes::Key, Error>;
 
+    /// Install the device HMAC agreed by shared secret negotiation into hardware (optional).
+    fn hmac_key_agreed(&self, _key: &crypto::hmac::Key) -> Option<Box<dyn DeviceHmac>> {
+        // By default, use a software implementation that holds the key in memory.
+        None
+    }
+
     /// Retrieve the hardware backed secret used for UNIQUE_ID generation.
     fn unique_id_hbk(&self, ckdf: &dyn crypto::Ckdf) -> Result<crypto::hmac::Key, Error> {
         // By default, use CKDF on the key agreement secret to derive a key.
         let unique_id_label = b"UniqueID HBK 32B";
         ckdf.ckdf(&self.kak()?.into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
     }
+}
+
+/// Device HMAC calculation.
+pub trait DeviceHmac {
+    /// Calculate the HMAC over the data using the agreed device HMAC key.
+    fn hmac(&self, imp: &dyn crypto::Hmac, data: &[u8]) -> Result<Vec<u8>, Error>;
 }
 
 /// Identification of which attestation signing key is required.
