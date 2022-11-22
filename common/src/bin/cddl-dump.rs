@@ -38,14 +38,15 @@ fn main() {
     show_schema::<AttestationKey>();
     // BeginResult omitted as it holds a Binder reference
     show_schema::<Certificate>();
-    show_schema::<DeviceInfo>();
+    show_schema::<rpc::DeviceInfo>();
     show_schema::<HardwareAuthToken>();
     show_schema::<KeyCharacteristics>();
     show_schema::<KeyCreationResult>();
     show_schema::<KeyMintHardwareInfo>();
-    show_schema::<MacedPublicKey>();
-    show_schema::<ProtectedData>();
-    show_schema::<RpcHardwareInfo>();
+    show_schema::<rpc::EekCurve>();
+    show_schema::<rpc::MacedPublicKey>();
+    show_schema::<rpc::ProtectedData>();
+    show_schema::<rpc::HardwareInfo>();
     show_schema::<TimeStampToken>();
     show_schema::<Timestamp>();
     show_schema::<SharedSecretParameters>();

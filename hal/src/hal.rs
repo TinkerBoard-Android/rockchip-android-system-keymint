@@ -140,8 +140,8 @@ impl Fromm<wire::keymint::Certificate> for keymint::Certificate::Certificate {
         Self { encodedCertificate: val.encoded_certificate }
     }
 }
-impl Fromm<wire::keymint::DeviceInfo> for rkp::DeviceInfo::DeviceInfo {
-    fn fromm(val: wire::keymint::DeviceInfo) -> Self {
+impl Fromm<wire::rpc::DeviceInfo> for rkp::DeviceInfo::DeviceInfo {
+    fn fromm(val: wire::rpc::DeviceInfo) -> Self {
         Self { deviceInfo: val.device_info }
     }
 }
@@ -187,18 +187,18 @@ impl Fromm<wire::keymint::KeyMintHardwareInfo>
         }
     }
 }
-impl Fromm<wire::keymint::MacedPublicKey> for rkp::MacedPublicKey::MacedPublicKey {
-    fn fromm(val: wire::keymint::MacedPublicKey) -> Self {
+impl Fromm<wire::rpc::MacedPublicKey> for rkp::MacedPublicKey::MacedPublicKey {
+    fn fromm(val: wire::rpc::MacedPublicKey) -> Self {
         Self { macedKey: val.maced_key }
     }
 }
-impl Fromm<wire::keymint::ProtectedData> for rkp::ProtectedData::ProtectedData {
-    fn fromm(val: wire::keymint::ProtectedData) -> Self {
+impl Fromm<wire::rpc::ProtectedData> for rkp::ProtectedData::ProtectedData {
+    fn fromm(val: wire::rpc::ProtectedData) -> Self {
         Self { protectedData: val.protected_data }
     }
 }
-impl Fromm<wire::keymint::RpcHardwareInfo> for rkp::RpcHardwareInfo::RpcHardwareInfo {
-    fn fromm(val: wire::keymint::RpcHardwareInfo) -> Self {
+impl Fromm<wire::rpc::HardwareInfo> for rkp::RpcHardwareInfo::RpcHardwareInfo {
+    fn fromm(val: wire::rpc::HardwareInfo) -> Self {
         Self {
             versionNumber: val.version_number,
             rpcAuthorName: val.rpc_author_name,
@@ -411,12 +411,12 @@ impl TryFromm<keymint::HardwareAuthToken::HardwareAuthToken> for wire::keymint::
         })
     }
 }
-impl Fromm<rkp::MacedPublicKey::MacedPublicKey> for wire::keymint::MacedPublicKey {
+impl Fromm<rkp::MacedPublicKey::MacedPublicKey> for wire::rpc::MacedPublicKey {
     fn fromm(val: rkp::MacedPublicKey::MacedPublicKey) -> Self {
         Self { maced_key: val.macedKey }
     }
 }
-impl Fromm<&rkp::MacedPublicKey::MacedPublicKey> for wire::keymint::MacedPublicKey {
+impl Fromm<&rkp::MacedPublicKey::MacedPublicKey> for wire::rpc::MacedPublicKey {
     fn fromm(val: &rkp::MacedPublicKey::MacedPublicKey) -> Self {
         Self { maced_key: val.macedKey.to_vec() }
     }

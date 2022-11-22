@@ -16,10 +16,25 @@ pub use ciborium as cbor;
 pub use coset;
 
 pub mod keymint;
+pub mod rpc;
 pub mod secureclock;
 pub mod sharedsecret;
 pub mod types;
 pub use types::*;
+
+/// Macro that emits an implementation of `TryFrom<i32>` for an enum type that has
+/// `[derive(N)]` attached to it.
+#[macro_export]
+macro_rules! try_from_n {
+    { $ename:ident } => {
+        impl core::convert::TryFrom<i32> for $ename {
+            type Error = $crate::ValueNotRecognized;
+            fn try_from(value: i32) -> Result<Self, Self::Error> {
+                Self::n(value).ok_or($crate::ValueNotRecognized)
+            }
+        }
+    };
+}
 
 /// Function that mimics `vec![<val>; <len>]` but which detects allocation failure with the given
 /// error.
