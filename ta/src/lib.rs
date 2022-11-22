@@ -515,10 +515,7 @@ impl<'a> KeyMintTa<'a> {
                     verified_boot_hash: req.verified_boot_hash,
                     boot_patchlevel: req.boot_patchlevel,
                 }) {
-                    Ok(_) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::SetBootInfo(SetBootInfoResponse {})),
-                    },
+                    Ok(_) => op_ok_rsp(PerformOpRsp::SetBootInfo(SetBootInfoResponse {})),
                     Err(e) => op_error_rsp(SetBootInfoRequest::CODE, e),
                 }
             }
@@ -528,39 +525,27 @@ impl<'a> KeyMintTa<'a> {
                     os_patchlevel: req.os_patchlevel,
                     vendor_patchlevel: req.vendor_patchlevel,
                 });
-                PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::SetHalInfo(SetHalInfoResponse {})),
-                }
+                op_ok_rsp(PerformOpRsp::SetHalInfo(SetHalInfoResponse {}))
             }
             PerformOpReq::SetAttestationIds(req) => {
                 self.set_attestation_ids(req.ids);
-                PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::SetAttestationIds(SetAttestationIdsResponse {})),
-                }
+                op_ok_rsp(PerformOpRsp::SetAttestationIds(SetAttestationIdsResponse {}))
             }
 
             // ISharedSecret messages.
             PerformOpReq::SharedSecretGetSharedSecretParameters(_req) => {
                 match self.get_shared_secret_params() {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::SharedSecretGetSharedSecretParameters(
-                            GetSharedSecretParametersResponse { ret },
-                        )),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::SharedSecretGetSharedSecretParameters(
+                        GetSharedSecretParametersResponse { ret },
+                    )),
                     Err(e) => op_error_rsp(GetSharedSecretParametersRequest::CODE, e),
                 }
             }
             PerformOpReq::SharedSecretComputeSharedSecret(req) => {
                 match self.compute_shared_secret(&req.params) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::SharedSecretComputeSharedSecret(
-                            ComputeSharedSecretResponse { ret },
-                        )),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::SharedSecretComputeSharedSecret(
+                        ComputeSharedSecretResponse { ret },
+                    )),
                     Err(e) => op_error_rsp(ComputeSharedSecretRequest::CODE, e),
                 }
             }
@@ -568,37 +553,29 @@ impl<'a> KeyMintTa<'a> {
             // ISecureClock messages.
             PerformOpReq::SecureClockGenerateTimeStamp(req) => {
                 match self.generate_timestamp(req.challenge) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::SecureClockGenerateTimeStamp(
-                            GenerateTimeStampResponse { ret },
-                        )),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::SecureClockGenerateTimeStamp(
+                        GenerateTimeStampResponse { ret },
+                    )),
                     Err(e) => op_error_rsp(GenerateTimeStampRequest::CODE, e),
                 }
             }
 
             // IKeyMintDevice messages.
             PerformOpReq::DeviceGetHardwareInfo(_req) => match self.get_hardware_info() {
-                Ok(ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::DeviceGetHardwareInfo(GetHardwareInfoResponse { ret })),
-                },
+                Ok(ret) => {
+                    op_ok_rsp(PerformOpRsp::DeviceGetHardwareInfo(GetHardwareInfoResponse { ret }))
+                }
                 Err(e) => op_error_rsp(GetHardwareInfoRequest::CODE, e),
             },
             PerformOpReq::DeviceAddRngEntropy(req) => match self.add_rng_entropy(&req.data) {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::DeviceAddRngEntropy(AddRngEntropyResponse {})),
-                },
+                Ok(_ret) => op_ok_rsp(PerformOpRsp::DeviceAddRngEntropy(AddRngEntropyResponse {})),
                 Err(e) => op_error_rsp(AddRngEntropyRequest::CODE, e),
             },
             PerformOpReq::DeviceGenerateKey(req) => {
                 match self.generate_key(&req.key_params, req.attestation_key) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceGenerateKey(GenerateKeyResponse { ret })),
-                    },
+                    Ok(ret) => {
+                        op_ok_rsp(PerformOpRsp::DeviceGenerateKey(GenerateKeyResponse { ret }))
+                    }
                     Err(e) => op_error_rsp(GenerateKeyRequest::CODE, e),
                 }
             }
@@ -610,10 +587,7 @@ impl<'a> KeyMintTa<'a> {
                     req.attestation_key,
                     KeyImport::NonWrapped,
                 ) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceImportKey(ImportKeyResponse { ret })),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::DeviceImportKey(ImportKeyResponse { ret })),
                     Err(e) => op_error_rsp(ImportKeyRequest::CODE, e),
                 }
             }
@@ -626,118 +600,89 @@ impl<'a> KeyMintTa<'a> {
                     req.password_sid,
                     req.biometric_sid,
                 ) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceImportWrappedKey(ImportWrappedKeyResponse {
+                    Ok(ret) => {
+                        op_ok_rsp(PerformOpRsp::DeviceImportWrappedKey(ImportWrappedKeyResponse {
                             ret,
-                        })),
-                    },
+                        }))
+                    }
                     Err(e) => op_error_rsp(ImportWrappedKeyRequest::CODE, e),
                 }
             }
             PerformOpReq::DeviceUpgradeKey(req) => {
                 match self.upgrade_key(&req.key_blob_to_upgrade, req.upgrade_params) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceUpgradeKey(UpgradeKeyResponse { ret })),
-                    },
+                    Ok(ret) => {
+                        op_ok_rsp(PerformOpRsp::DeviceUpgradeKey(UpgradeKeyResponse { ret }))
+                    }
                     Err(e) => op_error_rsp(UpgradeKeyRequest::CODE, e),
                 }
             }
             PerformOpReq::DeviceDeleteKey(req) => match self.delete_key(&req.key_blob) {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::DeviceDeleteKey(DeleteKeyResponse {})),
-                },
+                Ok(_ret) => op_ok_rsp(PerformOpRsp::DeviceDeleteKey(DeleteKeyResponse {})),
                 Err(e) => op_error_rsp(DeleteKeyRequest::CODE, e),
             },
             PerformOpReq::DeviceDeleteAllKeys(_req) => match self.delete_all_keys() {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::DeviceDeleteAllKeys(DeleteAllKeysResponse {})),
-                },
+                Ok(_ret) => op_ok_rsp(PerformOpRsp::DeviceDeleteAllKeys(DeleteAllKeysResponse {})),
                 Err(e) => op_error_rsp(DeleteAllKeysRequest::CODE, e),
             },
             PerformOpReq::DeviceDestroyAttestationIds(_req) => match self.destroy_attestation_ids()
             {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::DeviceDestroyAttestationIds(
-                        DestroyAttestationIdsResponse {},
-                    )),
-                },
+                Ok(_ret) => op_ok_rsp(PerformOpRsp::DeviceDestroyAttestationIds(
+                    DestroyAttestationIdsResponse {},
+                )),
                 Err(e) => op_error_rsp(DestroyAttestationIdsRequest::CODE, e),
             },
             PerformOpReq::DeviceBegin(req) => {
                 match self.begin_operation(req.purpose, &req.key_blob, req.params, req.auth_token) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceBegin(BeginResponse { ret })),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::DeviceBegin(BeginResponse { ret })),
                     Err(e) => op_error_rsp(BeginRequest::CODE, e),
                 }
             }
             PerformOpReq::DeviceDeviceLocked(req) => {
                 match self.device_locked(req.password_only, req.timestamp_token) {
-                    Ok(_ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceDeviceLocked(DeviceLockedResponse {})),
-                    },
+                    Ok(_ret) => {
+                        op_ok_rsp(PerformOpRsp::DeviceDeviceLocked(DeviceLockedResponse {}))
+                    }
                     Err(e) => op_error_rsp(DeviceLockedRequest::CODE, e),
                 }
             }
             PerformOpReq::DeviceEarlyBootEnded(_req) => match self.early_boot_ended() {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::DeviceEarlyBootEnded(EarlyBootEndedResponse {})),
-                },
+                Ok(_ret) => {
+                    op_ok_rsp(PerformOpRsp::DeviceEarlyBootEnded(EarlyBootEndedResponse {}))
+                }
                 Err(e) => op_error_rsp(EarlyBootEndedRequest::CODE, e),
             },
             PerformOpReq::DeviceConvertStorageKeyToEphemeral(req) => {
                 match self.convert_storage_key_to_ephemeral(&req.storage_key_blob) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceConvertStorageKeyToEphemeral(
-                            ConvertStorageKeyToEphemeralResponse { ret },
-                        )),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::DeviceConvertStorageKeyToEphemeral(
+                        ConvertStorageKeyToEphemeralResponse { ret },
+                    )),
                     Err(e) => op_error_rsp(ConvertStorageKeyToEphemeralRequest::CODE, e),
                 }
             }
             PerformOpReq::DeviceGetKeyCharacteristics(req) => {
                 match self.get_key_characteristics(&req.key_blob, req.app_id, req.app_data) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::DeviceGetKeyCharacteristics(
-                            GetKeyCharacteristicsResponse { ret },
-                        )),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::DeviceGetKeyCharacteristics(
+                        GetKeyCharacteristicsResponse { ret },
+                    )),
                     Err(e) => op_error_rsp(GetKeyCharacteristicsRequest::CODE, e),
                 }
             }
             PerformOpReq::GetRootOfTrustChallenge(_req) => match self.get_root_of_trust_challenge()
             {
-                Ok(ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::GetRootOfTrustChallenge(
-                        GetRootOfTrustChallengeResponse { ret },
-                    )),
-                },
+                Ok(ret) => op_ok_rsp(PerformOpRsp::GetRootOfTrustChallenge(
+                    GetRootOfTrustChallengeResponse { ret },
+                )),
                 Err(e) => op_error_rsp(GetRootOfTrustChallengeRequest::CODE, e),
             },
             PerformOpReq::GetRootOfTrust(req) => match self.get_root_of_trust(&req.challenge) {
-                Ok(ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::GetRootOfTrust(GetRootOfTrustResponse { ret })),
-                },
+                Ok(ret) => op_ok_rsp(PerformOpRsp::GetRootOfTrust(GetRootOfTrustResponse { ret })),
                 Err(e) => op_error_rsp(GetRootOfTrustRequest::CODE, e),
             },
             PerformOpReq::SendRootOfTrust(req) => {
                 match self.send_root_of_trust(&req.root_of_trust) {
-                    Ok(_ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::SendRootOfTrust(SendRootOfTrustResponse {})),
-                    },
+                    Ok(_ret) => {
+                        op_ok_rsp(PerformOpRsp::SendRootOfTrust(SendRootOfTrustResponse {}))
+                    }
                     Err(e) => op_error_rsp(SendRootOfTrustRequest::CODE, e),
                 }
             }
@@ -749,10 +694,7 @@ impl<'a> KeyMintTa<'a> {
                 req.auth_token,
                 req.timestamp_token,
             ) {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::OperationUpdateAad(UpdateAadResponse {})),
-                },
+                Ok(_ret) => op_ok_rsp(PerformOpRsp::OperationUpdateAad(UpdateAadResponse {})),
                 Err(e) => op_error_rsp(UpdateAadRequest::CODE, e),
             },
             PerformOpReq::OperationUpdate(req) => {
@@ -762,10 +704,7 @@ impl<'a> KeyMintTa<'a> {
                     req.auth_token,
                     req.timestamp_token,
                 ) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::OperationUpdate(UpdateResponse { ret })),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::OperationUpdate(UpdateResponse { ret })),
                     Err(e) => op_error_rsp(UpdateRequest::CODE, e),
                 }
             }
@@ -778,37 +717,27 @@ impl<'a> KeyMintTa<'a> {
                     req.timestamp_token,
                     req.confirmation_token.as_deref(),
                 ) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::OperationFinish(FinishResponse { ret })),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::OperationFinish(FinishResponse { ret })),
                     Err(e) => op_error_rsp(FinishRequest::CODE, e),
                 }
             }
             PerformOpReq::OperationAbort(req) => match self.op_abort(OpHandle(req.op_handle)) {
-                Ok(_ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::OperationAbort(AbortResponse {})),
-                },
+                Ok(_ret) => op_ok_rsp(PerformOpRsp::OperationAbort(AbortResponse {})),
                 Err(e) => op_error_rsp(AbortRequest::CODE, e),
             },
 
             // IRemotelyProvisionedComponentOperation messages.
             PerformOpReq::RpcGetHardwareInfo(_req) => match self.get_rpc_hardware_info() {
-                Ok(ret) => PerformOpResponse {
-                    error_code: ErrorCode::Ok,
-                    rsp: Some(PerformOpRsp::RpcGetHardwareInfo(GetRpcHardwareInfoResponse { ret })),
-                },
+                Ok(ret) => {
+                    op_ok_rsp(PerformOpRsp::RpcGetHardwareInfo(GetRpcHardwareInfoResponse { ret }))
+                }
                 Err(e) => op_error_rsp(GetRpcHardwareInfoRequest::CODE, e),
             },
             PerformOpReq::RpcGenerateEcdsaP256KeyPair(req) => {
                 match self.generate_ecdsa_p256_keypair(req.test_mode) {
-                    Ok((pubkey, ret)) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::RpcGenerateEcdsaP256KeyPair(
-                            GenerateEcdsaP256KeyPairResponse { maced_public_key: pubkey, ret },
-                        )),
-                    },
+                    Ok((pubkey, ret)) => op_ok_rsp(PerformOpRsp::RpcGenerateEcdsaP256KeyPair(
+                        GenerateEcdsaP256KeyPairResponse { maced_public_key: pubkey, ret },
+                    )),
                     Err(e) => op_error_rsp(GenerateEcdsaP256KeyPairRequest::CODE, e),
                 }
             }
@@ -819,23 +748,19 @@ impl<'a> KeyMintTa<'a> {
                     &req.endpoint_encryption_cert_chain,
                     &req.challenge,
                 ) {
-                    Ok((device_info, protected_data, ret)) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::RpcGenerateCertificateRequest(
+                    Ok((device_info, protected_data, ret)) => {
+                        op_ok_rsp(PerformOpRsp::RpcGenerateCertificateRequest(
                             GenerateCertificateRequestResponse { device_info, protected_data, ret },
-                        )),
-                    },
+                        ))
+                    }
                     Err(e) => op_error_rsp(GenerateCertificateRequestRequest::CODE, e),
                 }
             }
             PerformOpReq::RpcGenerateCertificateV2Request(req) => {
                 match self.generate_cert_req_v2(req.keys_to_sign, &req.challenge) {
-                    Ok(ret) => PerformOpResponse {
-                        error_code: ErrorCode::Ok,
-                        rsp: Some(PerformOpRsp::RpcGenerateCertificateV2Request(
-                            GenerateCertificateRequestV2Response { ret },
-                        )),
-                    },
+                    Ok(ret) => op_ok_rsp(PerformOpRsp::RpcGenerateCertificateV2Request(
+                        GenerateCertificateRequestV2Response { ret },
+                    )),
                     Err(e) => op_error_rsp(GenerateCertificateRequestV2Request::CODE, e),
                 }
             }
@@ -1096,6 +1021,11 @@ impl<'a> KeyMintTa<'a> {
             self.hw_info.security_level
         ))
     }
+}
+
+/// Create an OK response structure with the given inner response message.
+fn op_ok_rsp(rsp: PerformOpRsp) -> PerformOpResponse {
+    PerformOpResponse { error_code: ErrorCode::Ok, rsp: Some(rsp) }
 }
 
 /// Create a response structure with the given error code.
