@@ -1,8 +1,8 @@
 //! Traits representing abstractions of cryptographic functionality.
-
 use super::*;
-use crate::{explicit, keyblob, vec_try, Error};
+use crate::{crypto::ec::Key, explicit, keyblob, vec_try, Error};
 use alloc::{boxed::Box, vec::Vec};
+use der::Decode;
 use kmr_wire::{keymint, keymint::Digest, KeySizeInBits, RsaExponent};
 use log::{error, warn};
 
@@ -331,6 +331,35 @@ pub trait Ec {
         _params: &[keymint::KeyParam],
     ) -> Result<KeyMaterial, Error> {
         ec::import_raw_x25519_key(data)
+    }
+
+    /// Return the public key data that corresponds to the provided private `key`.
+    /// If `CurveType` of the key is `CurveType::Nist`, return the public key data
+    /// as a SEC-1 encoded uncompressed point as described in RFC 5480 section 2.1.
+    /// I.e. 0x04: uncompressed, followed by x || y coordinates.
+    ///
+    /// For other two curve types, return the raw public key data.
+    fn subject_public_key(&self, key: &OpaqueOr<ec::Key>) -> Result<Vec<u8>, Error> {
+        // The default implementation only handles the `Explicit<ec::Key>` variant.
+        let ec_key = explicit!(key)?;
+        match ec_key {
+            Key::P224(nist_key)
+            | Key::P256(nist_key)
+            | Key::P384(nist_key)
+            | Key::P521(nist_key) => {
+                let ec_pvt_key = sec1::EcPrivateKey::from_der(nist_key.0.as_slice())?;
+                match ec_pvt_key.public_key {
+                    Some(pub_key) => Ok(pub_key.to_vec()),
+                    None => {
+                        // Key structure doesn't include optional public key, so regenerate it.
+                        let nist_curve: ec::NistCurve = ec_key.curve().try_into()?;
+                        Ok(self.nist_public_key(nist_key, nist_curve)?)
+                    }
+                }
+            }
+            Key::Ed25519(ed25519_key) => self.ed25519_public_key(ed25519_key),
+            Key::X25519(x25519_key) => self.x25519_public_key(x25519_key),
+        }
     }
 
     /// Return the public key data that corresponds to the provided private `key`, as a SEC-1
