@@ -166,6 +166,68 @@ impl OpaqueOr<Key> {
             subject_public_key: buf,
         })
     }
+
+    pub fn public_cose_key(
+        &self,
+        ec: &dyn super::Ec,
+        curve: EcCurve,
+        curve_type: CurveType,
+        purpose: CoseKeyPurpose,
+        key_id: Option<Vec<u8>>,
+        test_mode: bool,
+    ) -> Result<coset::CoseKey, Error> {
+        let nist_algo = match purpose {
+            CoseKeyPurpose::Agree => coset::iana::Algorithm::ECDH_ES_HKDF_256,
+            CoseKeyPurpose::Sign => coset::iana::Algorithm::ES256,
+        };
+
+        let pub_key = ec.subject_public_key(self)?;
+        let mut builder = match curve_type {
+            CurveType::Nist => {
+                let nist_curve: NistCurve = curve.try_into()?;
+                let (x, y) = coordinates_from_pub_key(pub_key, nist_curve)?;
+                let cose_nist_curve = match nist_curve {
+                    NistCurve::P224 => {
+                        // P-224 is not supported by COSE: there is no value in the COSE Elliptic
+                        // Curve registry for it.
+                        return Err(km_err!(Unimplemented, "no COSE support for P-224"));
+                    }
+                    NistCurve::P256 => coset::iana::EllipticCurve::P_256,
+                    NistCurve::P384 => coset::iana::EllipticCurve::P_384,
+                    NistCurve::P521 => coset::iana::EllipticCurve::P_521,
+                };
+                coset::CoseKeyBuilder::new_ec2_pub_key(cose_nist_curve, x, y).algorithm(nist_algo)
+            }
+            CurveType::EdDsa => coset::CoseKeyBuilder::new_okp_key()
+                .param(
+                    coset::iana::OkpKeyParameter::Crv as i64,
+                    coset::cbor::value::Value::from(coset::iana::EllipticCurve::Ed25519 as u64),
+                )
+                .param(
+                    coset::iana::OkpKeyParameter::X as i64,
+                    coset::cbor::value::Value::from(pub_key),
+                )
+                .algorithm(coset::iana::Algorithm::EdDSA),
+            CurveType::Xdh => coset::CoseKeyBuilder::new_okp_key()
+                .param(
+                    coset::iana::OkpKeyParameter::Crv as i64,
+                    coset::cbor::value::Value::from(coset::iana::EllipticCurve::X25519 as u64),
+                )
+                .param(
+                    coset::iana::OkpKeyParameter::X as i64,
+                    coset::cbor::value::Value::from(pub_key),
+                )
+                .algorithm(coset::iana::Algorithm::ECDH_ES_HKDF_256),
+        };
+
+        if let Some(key_id) = key_id {
+            builder = builder.key_id(key_id);
+        }
+        if test_mode {
+            builder = builder.param(RKP_TEST_KEY_CBOR_MARKER, coset::cbor::value::Value::Null);
+        }
+        Ok(builder.build())
+    }
 }
 
 /// Elliptic curve private key material.
@@ -218,68 +280,6 @@ impl Key {
             Key::X25519(_) => EcCurve::Curve25519,
         }
     }
-
-    pub fn public_cose_key(
-        &self,
-        ec: &dyn super::Ec,
-        purpose: CoseKeyPurpose,
-        key_id: Option<Vec<u8>>,
-        test_mode: bool,
-    ) -> Result<coset::CoseKey, Error> {
-        let nist_algo = match purpose {
-            CoseKeyPurpose::Agree => coset::iana::Algorithm::ECDH_ES_HKDF_256,
-            CoseKeyPurpose::Sign => coset::iana::Algorithm::ES256,
-        };
-        let mut builder = match self {
-            Key::P224(_key) => {
-                // P-224 is not supported by COSE: there is no value in the COSE Elliptic Curve
-                // registry for it.
-                return Err(km_err!(Unimplemented, "no COSE support for P-224"));
-            }
-            Key::P256(key) => {
-                let (x, y) = key.public_coord_bytes(ec, NistCurve::P256)?;
-                coset::CoseKeyBuilder::new_ec2_pub_key(coset::iana::EllipticCurve::P_256, x, y)
-                    .algorithm(nist_algo)
-            }
-            Key::P384(key) => {
-                let (x, y) = key.public_coord_bytes(ec, NistCurve::P384)?;
-                coset::CoseKeyBuilder::new_ec2_pub_key(coset::iana::EllipticCurve::P_384, x, y)
-                    .algorithm(nist_algo)
-            }
-            Key::P521(key) => {
-                let (x, y) = key.public_coord_bytes(ec, NistCurve::P521)?;
-                coset::CoseKeyBuilder::new_ec2_pub_key(coset::iana::EllipticCurve::P_521, x, y)
-                    .algorithm(nist_algo)
-            }
-            Key::Ed25519(key) => coset::CoseKeyBuilder::new_okp_key()
-                .param(
-                    coset::iana::OkpKeyParameter::Crv as i64,
-                    coset::cbor::value::Value::from(coset::iana::EllipticCurve::Ed25519 as u64),
-                )
-                .param(
-                    coset::iana::OkpKeyParameter::X as i64,
-                    coset::cbor::value::Value::from(ec.ed25519_public_key(key)?),
-                )
-                .algorithm(coset::iana::Algorithm::EdDSA),
-            Key::X25519(key) => coset::CoseKeyBuilder::new_okp_key()
-                .param(
-                    coset::iana::OkpKeyParameter::Crv as i64,
-                    coset::cbor::value::Value::from(coset::iana::EllipticCurve::X25519 as u64),
-                )
-                .param(
-                    coset::iana::OkpKeyParameter::X as i64,
-                    coset::cbor::value::Value::from(ec.x25519_public_key(key)?),
-                )
-                .algorithm(coset::iana::Algorithm::ECDH_ES_HKDF_256),
-        };
-        if let Some(key_id) = key_id {
-            builder = builder.key_id(key_id);
-        }
-        if test_mode {
-            builder = builder.param(RKP_TEST_KEY_CBOR_MARKER, coset::cbor::value::Value::Null);
-        }
-        Ok(builder.build())
-    }
 }
 
 /// A NIST EC key, in the form of an ASN.1 DER encoding of a `ECPrivateKey` structure,
@@ -296,33 +296,30 @@ impl Key {
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct NistKey(pub Vec<u8>);
 
-impl NistKey {
-    /// Return the (x, y) coordinates of the public key as bytes.
-    fn public_coord_bytes(
-        &self,
-        ec: &dyn super::Ec,
-        curve: NistCurve,
-    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
-        let sec1_data = ec.nist_public_key(self, curve)?;
-        let coord_len = curve.coord_len();
-        if sec1_data.len() != (1 + 2 * coord_len) {
-            return Err(km_err!(
-                UnknownError,
-                "unexpected SEC1 pubkey len of {} for {:?}",
-                sec1_data.len(),
-                curve
-            ));
-        }
-        if sec1_data[0] != SEC1_UNCOMPRESSED_PREFIX {
-            return Err(km_err!(
-                UnknownError,
-                "unexpected SEC1 pubkey initial byte {} for {:?}",
-                sec1_data[0],
-                curve
-            ));
-        }
-        Ok((try_to_vec(&sec1_data[1..1 + coord_len])?, try_to_vec(&sec1_data[1 + coord_len..])?))
+// Helper function to return the (x,y) coordinates, given the public key as a SEC-1 encoded
+// uncompressed point. 0x04: uncompressed, followed by x || y coordinates.
+pub fn coordinates_from_pub_key(
+    pub_key: Vec<u8>,
+    curve: NistCurve,
+) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    let coord_len = curve.coord_len();
+    if pub_key.len() != (1 + 2 * coord_len) {
+        return Err(km_err!(
+            UnknownError,
+            "unexpected SEC1 pubkey len of {} for {:?}",
+            pub_key.len(),
+            curve
+        ));
     }
+    if pub_key[0] != SEC1_UNCOMPRESSED_PREFIX {
+        return Err(km_err!(
+            UnknownError,
+            "unexpected SEC1 pubkey initial byte {} for {:?}",
+            pub_key[0],
+            curve
+        ));
+    }
+    Ok((try_to_vec(&pub_key[1..1 + coord_len])?, try_to_vec(&pub_key[1 + coord_len..])?))
 }
 
 /// An Ed25519 private key.
