@@ -280,16 +280,21 @@ KeyMintHardwareInfo = [
     key_mint_author_name: tstr,
     timestamp_token_required: bool,
 ]
+EekCurve = &(
+    EekCurve_None: 0,
+    EekCurve_P256: 1,
+    EekCurve_Curve25519: 2,
+)
 MacedPublicKey = [
     maced_key: bstr,
 ]
 ProtectedData = [
     protected_data: bstr,
 ]
-RpcHardwareInfo = [
+HardwareInfo = [
     version_number: int,
     rpc_author_name: tstr,
-    supported_eek_curve: RpcEekCurve,
+    supported_eek_curve: EekCurve,
     unique_id: [? tstr],
     supported_num_keys_in_csr: int,
 ]
@@ -513,7 +518,7 @@ AbortRequest = [
 AbortResponse = []
 GetRpcHardwareInfoRequest = []
 GetRpcHardwareInfoResponse = [
-    ret: RpcHardwareInfo,
+    ret: HardwareInfo,
 ]
 GenerateEcdsaP256KeyPairRequest = [
     test_mode: bool,

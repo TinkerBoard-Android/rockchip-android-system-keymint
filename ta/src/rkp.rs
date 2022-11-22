@@ -7,16 +7,13 @@ use kmr_common::{km_err, try_to_vec, Error};
 use kmr_wire::{
     cbor,
     cbor::cbor,
-    keymint,
-    keymint::{
-        DeviceInfo, MacedPublicKey, ProtectedData, RpcHardwareInfo, SecurityLevel,
-        VerifiedBootState,
-    },
+    keymint::{SecurityLevel, VerifiedBootState},
+    rpc::{DeviceInfo, EekCurve, HardwareInfo, MacedPublicKey, ProtectedData},
     CborError,
 };
 
 impl<'a> KeyMintTa<'a> {
-    pub(crate) fn rkp_device_info(&self) -> Result<Vec<u8>, Error> {
+    pub(crate) fn rpc_device_info(&self) -> Result<Vec<u8>, Error> {
         // First make sure all the relevant info is available.
         let ids = self
             .get_attestation_ids()
@@ -78,11 +75,11 @@ impl<'a> KeyMintTa<'a> {
         Ok(data)
     }
 
-    pub(crate) fn get_rpc_hardware_info(&self) -> Result<RpcHardwareInfo, Error> {
-        Ok(RpcHardwareInfo {
+    pub(crate) fn get_rpc_hardware_info(&self) -> Result<HardwareInfo, Error> {
+        Ok(HardwareInfo {
             version_number: self.hw_info.version_number,
             rpc_author_name: self.hw_info.author_name.to_string(),
-            supported_eek_curve: keymint::RpcEekCurve::Curve25519,
+            supported_eek_curve: EekCurve::Curve25519,
             unique_id: Some(self.hw_info.unique_id.to_string()),
             supported_num_keys_in_csr: 20,
         })
@@ -102,7 +99,7 @@ impl<'a> KeyMintTa<'a> {
         _eek_chain: &[u8],
         _challenge: &[u8],
     ) -> Result<(DeviceInfo, ProtectedData, Vec<u8>), Error> {
-        let _device_info = self.rkp_device_info()?;
+        let _device_info = self.rpc_device_info()?;
         Err(km_err!(Unimplemented, "TODO: GenerateCertificateRequest"))
     }
 
