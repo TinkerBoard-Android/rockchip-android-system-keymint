@@ -1,8 +1,8 @@
 use crate::keymint::{
-    AttestationKey, DeviceInfo, ErrorCode, HardwareAuthToken, KeyCharacteristics,
-    KeyCreationResult, KeyFormat, KeyMintHardwareInfo, KeyParam, KeyPurpose, MacedPublicKey,
-    ProtectedData, RpcHardwareInfo,
+    AttestationKey, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyCreationResult, KeyFormat,
+    KeyMintHardwareInfo, KeyParam, KeyPurpose,
 };
+use crate::rpc;
 use crate::secureclock::TimeStampToken;
 use crate::sharedsecret::SharedSecretParameters;
 use crate::{cbor, cbor_type_error, vec_try, AsCborValue, CborError};
@@ -250,7 +250,7 @@ pub struct AbortResponse {}
 pub struct GetRpcHardwareInfoRequest {}
 #[derive(Debug, AsCborValue)]
 pub struct GetRpcHardwareInfoResponse {
-    pub ret: RpcHardwareInfo,
+    pub ret: rpc::HardwareInfo,
 }
 #[derive(Debug, AsCborValue)]
 pub struct GenerateEcdsaP256KeyPairRequest {
@@ -258,25 +258,25 @@ pub struct GenerateEcdsaP256KeyPairRequest {
 }
 #[derive(Debug, AsCborValue)]
 pub struct GenerateEcdsaP256KeyPairResponse {
-    pub maced_public_key: MacedPublicKey,
+    pub maced_public_key: rpc::MacedPublicKey,
     pub ret: Vec<u8>,
 }
 #[derive(Debug, AsCborValue)]
 pub struct GenerateCertificateRequestRequest {
     pub test_mode: bool,
-    pub keys_to_sign: Vec<MacedPublicKey>,
+    pub keys_to_sign: Vec<rpc::MacedPublicKey>,
     pub endpoint_encryption_cert_chain: Vec<u8>,
     pub challenge: Vec<u8>,
 }
 #[derive(Debug, AsCborValue)]
 pub struct GenerateCertificateRequestResponse {
-    pub device_info: DeviceInfo,
-    pub protected_data: ProtectedData,
+    pub device_info: rpc::DeviceInfo,
+    pub protected_data: rpc::ProtectedData,
     pub ret: Vec<u8>,
 }
 #[derive(Debug, AsCborValue)]
 pub struct GenerateCertificateRequestV2Request {
-    pub keys_to_sign: Vec<MacedPublicKey>,
+    pub keys_to_sign: Vec<rpc::MacedPublicKey>,
     pub challenge: Vec<u8>,
 }
 #[derive(Debug, AsCborValue)]

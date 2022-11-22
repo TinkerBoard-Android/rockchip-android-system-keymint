@@ -12,7 +12,9 @@
 //! - `KeyParam` is a Rust `enum` that is used in place of the `KeyParameter` struct, meaning...
 //! - `KeyParameterValue` is not included here.
 
-use crate::{cbor, cbor_type_error, vec_try, AsCborValue, CborError, KeySizeInBits, RsaExponent};
+use crate::{
+    cbor, cbor_type_error, try_from_n, vec_try, AsCborValue, CborError, KeySizeInBits, RsaExponent,
+};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -99,20 +101,6 @@ impl AsCborValue for DateTime {
     }
 }
 
-/// Macro that emits an implementation of `TryFrom<i32>` for an enum type that has
-/// `[derive(N)]` attached to it.
-#[macro_export]
-macro_rules! try_from_n {
-    { $ename:ident } => {
-        impl core::convert::TryFrom<i32> for $ename {
-            type Error = super::ValueNotRecognized;
-            fn try_from(value: i32) -> Result<Self, Self::Error> {
-                Self::n(value).ok_or(super::ValueNotRecognized)
-            }
-        }
-    };
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
 #[repr(i32)]
 pub enum Algorithm {
@@ -144,11 +132,6 @@ try_from_n!(BlockMode);
 #[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
 pub struct Certificate {
     pub encoded_certificate: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
-pub struct DeviceInfo {
-    pub device_info: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
@@ -287,17 +270,6 @@ pub enum HardwareAuthenticatorType {
     Any = -1,
 }
 try_from_n!(HardwareAuthenticatorType);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(i32)]
-pub enum RpcErrorCode {
-    Ok = 0, // not in HAL, assumed
-    Failed = 1,
-    InvalidMac = 2,
-    ProductionKeyInTestRequest = 3,
-    TestKeyInProductionRequest = 4,
-    InvalidEek = 5,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
 pub struct KeyCharacteristics {
@@ -970,11 +942,6 @@ pub enum KeyPurpose {
 }
 try_from_n!(KeyPurpose);
 
-#[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
-pub struct MacedPublicKey {
-    pub maced_key: Vec<u8>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
 #[repr(i32)]
 pub enum PaddingMode {
@@ -986,29 +953,6 @@ pub enum PaddingMode {
     Pkcs7 = 64,
 }
 try_from_n!(PaddingMode);
-
-#[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
-pub struct ProtectedData {
-    pub protected_data: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, AsCborValue)]
-pub struct RpcHardwareInfo {
-    pub version_number: i32,
-    pub rpc_author_name: String,
-    pub supported_eek_curve: RpcEekCurve,
-    pub unique_id: Option<String>,
-    pub supported_num_keys_in_csr: i32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
-#[repr(i32)]
-pub enum RpcEekCurve {
-    None = 0,
-    P256 = 1,
-    Curve25519 = 2,
-}
-try_from_n!(RpcEekCurve);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue, N)]
 #[repr(i32)]
