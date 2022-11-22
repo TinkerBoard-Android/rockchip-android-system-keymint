@@ -1,7 +1,7 @@
 //! Functionality related to RSA.
 
-use super::{KeyMaterial, KeySizeInBits, RsaExponent};
-use crate::{km_err, tag, try_to_vec, Error};
+use super::{KeyMaterial, KeySizeInBits, OpaqueOr, RsaExponent};
+use crate::{km_err, tag, try_to_vec, Error, FallibleAllocExt};
 use alloc::vec::Vec;
 use der::{Decode, Encode};
 use kmr_wire::keymint::{Digest, KeyParam, PaddingMode};
@@ -50,8 +50,38 @@ pub const SHA256_PKCS1_SIGNATURE_OID: pkcs8::ObjectIdentifier =
 pub struct Key(pub Vec<u8>);
 
 impl Key {
-    /// Return the public key information as an ASN.1 DER encodable `SubjectPublicKeyInfo`, as
-    /// described in RFC 5280 section 4.1.
+    /// Return the `subjectPublicKey` that holds an ASN.1 DER-encoded `SEQUENCE`
+    /// as per RFC 3279 section 2.3.1:
+    ///     ```asn1
+    ///     RSAPublicKey ::= SEQUENCE {
+    ///        modulus            INTEGER,    -- n
+    ///        publicExponent     INTEGER  }  -- e
+    ///     ```
+    pub fn subject_public_key(&self) -> Result<Vec<u8>, Error> {
+        let rsa_pvt_key = RsaPrivateKey::from_der(self.0.as_slice())?;
+        let rsa_pub_key = rsa_pvt_key.public_key();
+        let mut encoded_data = Vec::<u8>::new();
+        rsa_pub_key.encode_to_vec(&mut encoded_data)?;
+        Ok(encoded_data)
+    }
+
+    /// Size of the key in bytes.
+    pub fn size(&self) -> usize {
+        let rsa_pvt_key = match RsaPrivateKey::from_der(self.0.as_slice()) {
+            Ok(k) => k,
+            Err(e) => {
+                log::error!("failed to determine RSA key length: {:?}", e);
+                return 0;
+            }
+        };
+        let len = u32::from(rsa_pvt_key.modulus.len());
+        len as usize
+    }
+}
+
+impl OpaqueOr<Key> {
+    /// Encode into `buf` the public key information as an ASN.1 DER encodable
+    /// `SubjectPublicKeyInfo`, as described in RFC 5280 section 4.1.
     ///
     /// ```asn1
     /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
@@ -76,27 +106,14 @@ impl Key {
     pub fn subject_public_key_info<'a>(
         &'a self,
         buf: &'a mut Vec<u8>,
+        rsa: &dyn super::Rsa,
     ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
-        let rsa_pvt_key = RsaPrivateKey::from_der(self.0.as_slice())?;
-        let rsa_pub_key = rsa_pvt_key.public_key();
-        rsa_pub_key.encode_to_vec(buf)?;
+        let pub_key = rsa.subject_public_key(self)?;
+        buf.try_extend_from_slice(&pub_key)?;
         Ok(SubjectPublicKeyInfo {
             algorithm: AlgorithmIdentifier { oid: X509_OID, parameters: Some(der::AnyRef::NULL) },
             subject_public_key: buf,
         })
-    }
-
-    /// Size of the key in bytes.
-    pub fn size(&self) -> usize {
-        let rsa_pvt_key = match RsaPrivateKey::from_der(self.0.as_slice()) {
-            Ok(k) => k,
-            Err(e) => {
-                log::error!("failed to determine RSA key length: {:?}", e);
-                return 0;
-            }
-        };
-        let len = u32::from(rsa_pvt_key.modulus.len());
-        len as usize
     }
 }
 
