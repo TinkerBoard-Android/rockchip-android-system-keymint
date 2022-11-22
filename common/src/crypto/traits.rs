@@ -1,7 +1,7 @@
 //! Traits representing abstractions of cryptographic functionality.
 
 use super::*;
-use crate::{keyblob, vec_try, Error};
+use crate::{explicit, keyblob, vec_try, Error};
 use alloc::{boxed::Box, vec::Vec};
 use kmr_wire::{keymint, keymint::Digest, KeySizeInBits, RsaExponent};
 use log::{error, warn};
@@ -242,6 +242,20 @@ pub trait Rsa {
         _params: &[keymint::KeyParam],
     ) -> Result<(KeyMaterial, KeySizeInBits, RsaExponent), Error> {
         rsa::import_pkcs8_key(data)
+    }
+
+    /// Return the public key data corresponds to the provided private `key`,
+    /// as an ASN.1 DER-encoded `SEQUENCE` as per RFC 3279 section 2.3.1:
+    ///     ```asn1
+    ///     RSAPublicKey ::= SEQUENCE {
+    ///        modulus            INTEGER,    -- n
+    ///        publicExponent     INTEGER  }  -- e
+    ///     ```
+    /// which is the `subjectPublicKey` to be included in `SubjectPublicKeyInfo`.
+    fn subject_public_key(&self, key: &OpaqueOr<rsa::Key>) -> Result<Vec<u8>, Error> {
+        // The default implementation only handles the `Explicit<rsa::Key>` variant.
+        let rsa_key = explicit!(key)?;
+        rsa_key.subject_public_key()
     }
 
     /// Create an RSA decryption operation.
