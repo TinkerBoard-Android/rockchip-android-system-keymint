@@ -163,9 +163,10 @@ impl KeyMaterial {
         &'a self,
         buf: &'a mut Vec<u8>,
         ec: &dyn Ec,
+        rsa: &dyn Rsa,
     ) -> Result<Option<SubjectPublicKeyInfo<'a>>, Error> {
         Ok(match self {
-            Self::Rsa(key) => Some(explicit!(key)?.subject_public_key_info(buf)?),
+            Self::Rsa(key) => Some(key.subject_public_key_info(buf, rsa)?),
             Self::Ec(_curve, _curve_type, key) => {
                 Some(explicit!(key)?.subject_public_key_info(buf, ec)?)
             }
