@@ -1,9 +1,9 @@
 //! Functionality related to elliptic curve support.
 
-use super::{CurveType, KeyMaterial};
+use super::{CurveType, KeyMaterial, OpaqueOr};
 use crate::{km_err, try_to_vec, Error, FallibleAllocExt};
 use alloc::vec::Vec;
-use der::{AnyRef, Decode};
+use der::AnyRef;
 use kmr_wire::{coset, keymint::EcCurve, KeySizeInBits};
 use spki::{AlgorithmIdentifier, SubjectPublicKeyInfo};
 use zeroize::ZeroizeOnDrop;
@@ -98,6 +98,76 @@ impl TryFrom<EcCurve> for NistCurve {
     }
 }
 
+impl OpaqueOr<Key> {
+    /// Encode into `buf` the public key information as an ASN.1 DER encodable
+    /// `SubjectPublicKeyInfo`, as described in RFC 5280 section 4.1.
+    ///
+    /// ```asn1
+    /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
+    ///    algorithm            AlgorithmIdentifier,
+    ///    subjectPublicKey     BIT STRING  }
+    ///
+    /// AlgorithmIdentifier  ::=  SEQUENCE  {
+    ///    algorithm               OBJECT IDENTIFIER,
+    ///    parameters              ANY DEFINED BY algorithm OPTIONAL  }
+    /// ```
+    ///
+    /// For NIST curve EC keys, the contents are described in RFC 5480 section 2.1.
+    /// - The `AlgorithmIdentifier` has an `algorithm` OID of 1.2.840.10045.2.1.
+    /// - The `AlgorithmIdentifier` has `parameters` that hold an OID identifying the curve, here
+    ///   one of:
+    ///    - P-224: 1.3.132.0.33
+    ///    - P-256: 1.2.840.10045.3.1.7
+    ///    - P-384: 1.3.132.0.34
+    ///    - P-521: 1.3.132.0.35
+    /// - The `subjectPublicKey` bit string holds an ASN.1 DER-encoded `OCTET STRING` that contains
+    ///   a SEC-1 encoded public key.  The first byte indicates the format:
+    ///    - 0x04: uncompressed, followed by x || y coordinates
+    ///    - 0x03: compressed, followed by x coordinate (and with a odd y coordinate)
+    ///    - 0x02: compressed, followed by x coordinate (and with a even y coordinate)
+    ///
+    /// For Ed25519 keys, the contents of the `AlgorithmIdentifier` are described in RFC 8410
+    /// section 3.
+    /// - The `algorithm` has an OID of 1.3.101.112.
+    /// - The `parameters` are absent.
+    ///
+    /// The `subjectPublicKey` holds the raw key bytes.
+    ///
+    /// For X25519 keys, the contents of the `AlgorithmIdentifier` are described in RFC 8410
+    /// section 3.
+    /// - The `algorithm` has an OID of 1.3.101.110.
+    /// - The `parameters` are absent.
+    ///
+    /// The `subjectPublicKey` holds the raw key bytes.
+    pub fn subject_public_key_info<'a>(
+        &'a self,
+        buf: &'a mut Vec<u8>,
+        ec: &dyn super::Ec,
+        curve: &EcCurve,
+        curve_type: &CurveType,
+    ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
+        buf.try_extend_from_slice(&ec.subject_public_key(self)?)?;
+        let (oid, parameters) = match curve_type {
+            CurveType::Nist => {
+                let nist_curve: NistCurve = (*curve).try_into()?;
+                let params_oid = match nist_curve {
+                    NistCurve::P224 => &ALGO_PARAM_P224_OID,
+                    NistCurve::P256 => &ALGO_PARAM_P256_OID,
+                    NistCurve::P384 => &ALGO_PARAM_P384_OID,
+                    NistCurve::P521 => &ALGO_PARAM_P521_OID,
+                };
+                (X509_NIST_OID, Some(AnyRef::from(params_oid)))
+            }
+            CurveType::EdDsa => (X509_ED25519_OID, None),
+            CurveType::Xdh => (X509_X25519_OID, None),
+        };
+        Ok(SubjectPublicKeyInfo {
+            algorithm: AlgorithmIdentifier { oid, parameters },
+            subject_public_key: buf,
+        })
+    }
+}
+
 /// Elliptic curve private key material.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Key {
@@ -116,23 +186,6 @@ pub enum CoseKeyPurpose {
 }
 
 impl Key {
-    /// Return the public key information as an ASN.1 DER encodable `SubjectPublicKeyInfo`, as
-    /// described in RFC 5280 section 4.1.
-    pub fn subject_public_key_info<'a>(
-        &'a self,
-        buf: &'a mut Vec<u8>,
-        ec: &dyn super::Ec,
-    ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
-        match self {
-            Key::P224(key) => key.subject_public_key_info(NistCurve::P224, buf, ec),
-            Key::P256(key) => key.subject_public_key_info(NistCurve::P256, buf, ec),
-            Key::P384(key) => key.subject_public_key_info(NistCurve::P384, buf, ec),
-            Key::P521(key) => key.subject_public_key_info(NistCurve::P521, buf, ec),
-            Key::Ed25519(key) => key.subject_public_key_info(buf, ec),
-            Key::X25519(key) => key.subject_public_key_info(buf, ec),
-        }
-    }
-
     /// Return the private key material.
     pub fn private_key_bytes(&self) -> &[u8] {
         match self {
@@ -244,63 +297,6 @@ impl Key {
 pub struct NistKey(pub Vec<u8>);
 
 impl NistKey {
-    /// Return the public key information as an ASN.1 DER encodable `SubjectPublicKeyInfo`, as
-    /// described in RFC 5280 section 4.1.
-    ///
-    /// ```asn1
-    /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
-    ///    algorithm            AlgorithmIdentifier,
-    ///    subjectPublicKey     BIT STRING  }
-    ///
-    /// AlgorithmIdentifier  ::=  SEQUENCE  {
-    ///    algorithm               OBJECT IDENTIFIER,
-    ///    parameters              ANY DEFINED BY algorithm OPTIONAL  }
-    /// ```
-    ///
-    /// For NIST curve EC keys, the contents are described in RFC 5480 section 2.1.
-    /// - The `AlgorithmIdentifier` has an `algorithm` OID of 1.2.840.10045.2.1.
-    /// - The `AlgorithmIdentifier` has `parameters` that hold an OID identifying the curve, here
-    ///   one of:
-    ///    - P-224: 1.3.132.0.33
-    ///    - P-256: 1.2.840.10045.3.1.7
-    ///    - P-384: 1.3.132.0.34
-    ///    - P-521: 1.3.132.0.35
-    /// - The `subjectPublicKey` bit string holds an ASN.1 DER-encoded `OCTET STRING` that contains
-    ///   a SEC-1 encoded public key.  The first byte indicates the format:
-    ///    - 0x04: uncompressed, followed by x || y coordinates
-    ///    - 0x03: compressed, followed by x coordinate (and with a odd y coordinate)
-    ///    - 0x02: compressed, followed by x coordinate (and with a even y coordinate)
-    pub fn subject_public_key_info<'a>(
-        &self,
-        nist_curve: NistCurve,
-        buf: &'a mut Vec<u8>,
-        ec: &dyn super::Ec,
-    ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
-        let ec_pvt_key = sec1::EcPrivateKey::from_der(self.0.as_slice())?;
-        match ec_pvt_key.public_key {
-            Some(pub_key) => buf.try_extend_from_slice(pub_key)?,
-            None => {
-                // Key structure doesn't include optional public key, so regenerate it.
-                let pub_key = ec.nist_public_key(self, nist_curve)?;
-                buf.try_extend_from_slice(&pub_key)?;
-            }
-        }
-
-        let params_oid = match nist_curve {
-            NistCurve::P224 => &ALGO_PARAM_P224_OID,
-            NistCurve::P256 => &ALGO_PARAM_P256_OID,
-            NistCurve::P384 => &ALGO_PARAM_P384_OID,
-            NistCurve::P521 => &ALGO_PARAM_P521_OID,
-        };
-        Ok(SubjectPublicKeyInfo {
-            algorithm: AlgorithmIdentifier {
-                oid: X509_NIST_OID,
-                parameters: Some(AnyRef::from(params_oid)),
-            },
-            subject_public_key: buf,
-        })
-    }
-
     /// Return the (x, y) coordinates of the public key as bytes.
     fn public_coord_bytes(
         &self,
@@ -333,78 +329,9 @@ impl NistKey {
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct Ed25519Key(pub [u8; CURVE25519_PRIV_KEY_LEN]);
 
-impl Ed25519Key {
-    /// Return the public key information as an ASN.1 DER encodable `SubjectPublicKeyInfo`, as
-    /// described in RFC 5280 section 4.1.
-    ///
-    /// ```asn1
-    /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
-    ///    algorithm            AlgorithmIdentifier,
-    ///    subjectPublicKey     BIT STRING  }
-    ///
-    /// AlgorithmIdentifier  ::=  SEQUENCE  {
-    ///    algorithm               OBJECT IDENTIFIER,
-    ///    parameters              ANY DEFINED BY algorithm OPTIONAL  }
-    /// ```
-    ///
-    /// For Ed25519 keys, the contents of the `AlgorithmIdentifier` are described in RFC 8410
-    /// section 3.
-    /// - The `algorithm` has an OID of 1.3.101.112.
-    /// - The `parameters` are absent.
-    ///
-    /// The `subjectPublicKey` holds the raw key bytes.
-    pub fn subject_public_key_info<'a>(
-        &self,
-        buf: &'a mut Vec<u8>,
-        ec: &dyn super::Ec,
-    ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
-        let pub_key = ec.ed25519_public_key(self)?;
-        buf.try_extend_from_slice(&pub_key)?;
-
-        Ok(SubjectPublicKeyInfo {
-            algorithm: AlgorithmIdentifier { oid: X509_ED25519_OID, parameters: None },
-            subject_public_key: buf,
-        })
-    }
-}
-
 /// An X25519 private key.
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct X25519Key(pub [u8; CURVE25519_PRIV_KEY_LEN]);
-
-impl X25519Key {
-    /// Return the public key information as an ASN.1 DER encodable `SubjectPublicKeyInfo`, as
-    /// described in RFC 5280 section 4.1.
-    ///
-    /// ```asn1
-    /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
-    ///    algorithm            AlgorithmIdentifier,
-    ///    subjectPublicKey     BIT STRING  }
-    ///
-    /// AlgorithmIdentifier  ::=  SEQUENCE  {
-    ///    algorithm               OBJECT IDENTIFIER,
-    ///    parameters              ANY DEFINED BY algorithm OPTIONAL  }
-    /// ```
-    ///
-    /// For X25519 keys, the contents of the `AlgorithmIdentifier` are described in RFC 8410
-    /// section 3.
-    /// - The `algorithm` has an OID of 1.3.101.110.
-    /// - The `parameters` are absent.
-    ///
-    /// The `subjectPublicKey` holds the raw key bytes.
-    pub fn subject_public_key_info<'a>(
-        &self,
-        buf: &'a mut Vec<u8>,
-        ec: &dyn super::Ec,
-    ) -> Result<SubjectPublicKeyInfo<'a>, Error> {
-        let pub_key = ec.x25519_public_key(self)?;
-        buf.try_extend_from_slice(&pub_key)?;
-        Ok(SubjectPublicKeyInfo {
-            algorithm: AlgorithmIdentifier { oid: X509_X25519_OID, parameters: None },
-            subject_public_key: buf,
-        })
-    }
-}
 
 /// Return the OID used in an `AlgorithmIdentifier` for signatures produced by this curve.
 pub fn curve_to_signing_oid(curve: EcCurve) -> pkcs8::ObjectIdentifier {
