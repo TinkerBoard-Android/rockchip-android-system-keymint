@@ -628,6 +628,6 @@ PerformOpRsp = &(
     [SetAttestationIds, SetAttestationIdsResponse],
 )
 PerformOpResponse = [
-    error_code: ErrorCode,
+    error_code: int,
     rsp: [? PerformOpRsp],
 ]

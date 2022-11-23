@@ -163,8 +163,11 @@ where
         }
     };
     let opt_response = rsp_array.remove(1);
-    let error_code = <ErrorCode>::from_cbor_value(rsp_array.remove(0)).map_err(failed_cbor)?;
-    if error_code != ErrorCode::Ok {
+    let error_code = <i32>::from_cbor_value(rsp_array.remove(0)).map_err(failed_cbor)?;
+    // The error code is in a numbering space that depends on the specific HAL being
+    // invoked (IRemotelyProvisionedComponent vs. the rest). However, the OK value is
+    // the same in all spaces.
+    if error_code != ErrorCode::Ok as i32 {
         error!("HAL: command {:?} failed: {:?}", <R>::CODE, error_code);
         return Err(binder::Status::new_service_specific_error(error_code as i32, None));
     }
