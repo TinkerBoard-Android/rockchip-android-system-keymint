@@ -9,7 +9,7 @@ use alloc::{
 };
 use core::convert::From;
 use der::ErrorKind;
-use kmr_wire::{cbor, keymint::ErrorCode, CborError};
+use kmr_wire::{cbor, keymint::ErrorCode, rpc, CborError};
 
 pub use kmr_wire as wire;
 
@@ -22,7 +22,11 @@ pub mod tag;
 pub enum Error {
     Cbor(CborError),
     Der(ErrorKind),
+    // The IKeyMintDevice, ISharedSecret and ISecureClock HALs all share the same numbering
+    // space for error codes, encoded here as [`kmr_wire::keymint::ErrorCode`].
     Hal(ErrorCode, String),
+    // The IRemotelyProvisionedComponent HAL uses its own error codes.
+    Rpc(rpc::ErrorCode, String),
     // For an allocation error, hold a string literal rather than an allocated String to
     // avoid allocating in error path.
     Alloc(&'static str),
@@ -59,6 +63,15 @@ macro_rules! alloc_err {
             concat!(file!(), ":", line!(), ": failed allocation of size ", stringify!($len))
         )
     }
+}
+
+/// Macro to build an [`Error::Rpc`] instance for a specific [`rpc::ErrorCode`] value known at
+/// compile time: `rpc_err!(Removed, "some {} format", arg)`.
+#[macro_export]
+macro_rules! rpc_err {
+    { $error_code:ident, $($arg:tt)+ } => {
+        $crate::Error::Rpc(kmr_wire::rpc::ErrorCode::$error_code,
+                           alloc::format!("{}:{}: {}", file!(), line!(), format_args!($($arg)+))) };
 }
 
 /// Macro to allocate a `Vec<T>` with the given length reserved, detecting allocation failure.
@@ -139,16 +152,6 @@ impl From<alloc::collections::TryReserveError> for Error {
             kmr_wire::keymint::ErrorCode::MemoryAllocationFailed,
             "allocation of Vec failed".to_string(),
         )
-    }
-}
-
-impl From<Error> for ErrorCode {
-    fn from(e: Error) -> Self {
-        match e {
-            Error::Cbor(_) | Error::Der(..) => ErrorCode::InvalidArgument,
-            Error::Hal(e, _msg) => e,
-            Error::Alloc(_msg) => ErrorCode::MemoryAllocationFailed,
-        }
     }
 }
 
