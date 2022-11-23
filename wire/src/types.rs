@@ -1,5 +1,5 @@
 use crate::keymint::{
-    AttestationKey, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyCreationResult, KeyFormat,
+    AttestationKey, HardwareAuthToken, KeyCharacteristics, KeyCreationResult, KeyFormat,
     KeyMintHardwareInfo, KeyParam, KeyPurpose,
 };
 use crate::rpc;
@@ -357,11 +357,11 @@ pub struct SetAttestationIdsRequest {
 #[derive(Debug, AsCborValue)]
 pub struct SetAttestationIdsResponse {}
 
-// Result of an operation, as an error code and a response message (only present for
-// `ErrorCode::OK`).
+// Result of an operation, as an error code and a response message (only present when
+// `error_code` is zero).
 #[derive(Debug, AsCborValue)]
 pub struct PerformOpResponse {
-    pub error_code: ErrorCode,
+    pub error_code: i32,
     pub rsp: Option<PerformOpRsp>,
 }
 
@@ -603,3 +603,14 @@ declare_req_rsp_enums! { KeyMintOperation  =>    (PerformOpReq, PerformOpRsp) {
     SetBootInfo = 0x82 =>                              (SetBootInfoRequest, SetBootInfoResponse),
     SetAttestationIds = 0x83 =>                        (SetAttestationIdsRequest, SetAttestationIdsResponse),
 } }
+
+/// Indicate whether an operation is part of the `IRemotelyProvisionedComponent` HAL.
+pub fn is_rpc_operation(code: KeyMintOperation) -> bool {
+    matches!(
+        code,
+        KeyMintOperation::RpcGetHardwareInfo
+            | KeyMintOperation::RpcGenerateEcdsaP256KeyPair
+            | KeyMintOperation::RpcGenerateCertificateRequest
+            | KeyMintOperation::RpcGenerateCertificateV2Request
+    )
+}
