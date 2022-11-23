@@ -481,7 +481,11 @@ impl<'a> KeyMintTa<'a> {
             }
             Err(e) => {
                 error!("failed to decode CBOR request: {:?}", e);
-                error_rsp(ErrorCode::UnknownError)
+                // We need to report the error to the HAL, but we don't know whether the request was
+                // for the `IRemotelyProvisionedComponent` or for one of the other HALs, so we don't
+                // know what numbering space the error codes are expected to be in.  Assume the
+                // shared KeyMint `ErrorCode` space.
+                error_rsp(ErrorCode::UnknownError as i32)
             }
         };
         debug!("<- TA: send response {:?}", rsp);
@@ -1025,18 +1029,42 @@ impl<'a> KeyMintTa<'a> {
 
 /// Create an OK response structure with the given inner response message.
 fn op_ok_rsp(rsp: PerformOpRsp) -> PerformOpResponse {
-    PerformOpResponse { error_code: ErrorCode::Ok, rsp: Some(rsp) }
+    // Zero is OK in any context.
+    PerformOpResponse { error_code: 0, rsp: Some(rsp) }
 }
 
 /// Create a response structure with the given error code.
-fn error_rsp(err_code: ErrorCode) -> PerformOpResponse {
-    PerformOpResponse { error_code: err_code, rsp: None }
+fn error_rsp(error_code: i32) -> PerformOpResponse {
+    PerformOpResponse { error_code, rsp: None }
 }
 
 /// Create a response structure with the given error.
 fn op_error_rsp(op: KeyMintOperation, err: Error) -> PerformOpResponse {
     error!("failing {:?} request with error {:?}", op, err);
-    error_rsp(err.into())
+    if kmr_wire::is_rpc_operation(op) {
+        // The IRemotelyProvisionedComponent HAL uses a different error space than the
+        // other HALs.
+        let rpc_err: rpc::ErrorCode = match err {
+            Error::Cbor(_) | Error::Der(_) | Error::Alloc(_) => rpc::ErrorCode::Failed,
+            Error::Hal(_, _) => {
+                error!("encountered non-RKP error on RKP method! {:?}", err);
+                rpc::ErrorCode::Failed
+            }
+            Error::Rpc(e, _) => e,
+        };
+        error_rsp(rpc_err as i32)
+    } else {
+        let hal_err = match err {
+            Error::Cbor(_) | Error::Der(_) => ErrorCode::InvalidArgument,
+            Error::Hal(e, _) => e,
+            Error::Rpc(_, _) => {
+                error!("encountered RKP error on non-RKP method! {:?}", err);
+                ErrorCode::UnknownError
+            }
+            Error::Alloc(_) => ErrorCode::MemoryAllocationFailed,
+        };
+        error_rsp(hal_err as i32)
+    }
 }
 
 /// Hand-encoded [`PerformOpResponse`] data for [`ErrorCode::UNKNOWN_ERROR`].
