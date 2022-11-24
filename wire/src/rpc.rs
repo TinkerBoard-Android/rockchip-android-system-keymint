@@ -10,6 +10,14 @@ use alloc::{
 use enumn::N;
 use kmr_derive::AsCborValue;
 
+/// IRPC HAL Versions
+pub const IRPC_V2: i32 = 2;
+pub const IRPC_V3: i32 = 3;
+/// `AuthenticatedRequest` CDDL schema version
+pub const AUTH_REQ_SCHEMA_V1: i32 = 1;
+/// `CertificateType` for keymint
+pub const CERT_TYPE_KEYMINT: &str = "keymint";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i32)]
 pub enum ErrorCode {

@@ -198,10 +198,10 @@ pub enum CsrSigningAlgorithm {
 pub struct PubDiceArtifacts {
     // Certificates for the UDS Pub encoded in CBOR as per [`AdditionalDKSignatures`] structure in
     // ProtectedData.aidl for IRPC HAL version 2.
-    uds_certs: Vec<u8>,
+    pub uds_certs: Vec<u8>,
     // UDS Pub and the DICE certificates encoded in CBOR/COSE as per the [`Bcc`] structure
     // defined in ProtectedData.aidl for IRPC HAL version 2.
-    dice_cert_chain: Vec<u8>,
+    pub dice_cert_chain: Vec<u8>,
 }
 
 // Enum distinguishing the two modes of operation for IRPC HAL V2, allowing an optional context

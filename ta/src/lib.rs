@@ -23,7 +23,7 @@ use kmr_wire::{
         Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyMintHardwareInfo, KeyOrigin,
         KeyParam, SecurityLevel, VerifiedBootState,
     },
-    rpc::EekCurve,
+    rpc::{EekCurve, IRPC_V2, IRPC_V3},
     secureclock::{TimeStampToken, Timestamp},
     sharedsecret::SharedSecretParameters,
     *,
@@ -196,6 +196,15 @@ pub struct RpcInfoV3 {
 pub enum RpcInfo {
     V2(RpcInfoV2),
     V3(RpcInfoV3),
+}
+
+impl RpcInfo {
+    pub fn get_version(&self) -> i32 {
+        match self {
+            RpcInfo::V2(_) => IRPC_V2,
+            RpcInfo::V3(_) => IRPC_V3,
+        }
+    }
 }
 
 /// Information provided once at service start by the HAL service, describing
@@ -523,7 +532,7 @@ impl<'a> KeyMintTa<'a> {
     /// Retrieve the DICE info for the device, if available.
     fn get_dice_info(&self) -> Option<Rc<DiceInfo>> {
         // DICE info is cached only for IRPC V3 and above.
-        if let RpcInfo::V2(_) = self.rpc_info {
+        if self.rpc_info.get_version() < IRPC_V3 {
             return None;
         }
         if self.dice_info.borrow().is_none() {
