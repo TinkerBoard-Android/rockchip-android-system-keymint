@@ -43,14 +43,24 @@ fn process(filename: &str, hex: bool) {
         }
     };
     println!(
-        "{}, KeyBlob  {{\n  nonce={}\n  ciphertext=...(len {}),\n  tag={},\n  hw_enforced={:?},\n  sw_enforced={:?},\n}}",
+        "{}, KeyBlob  {{\n  format={:?}\n  nonce={},\n  ciphertext=...(len {}),\n  tag={},",
         filename,
+        keyblob.format,
         hex::encode(&keyblob.nonce),
         keyblob.ciphertext.len(),
-        hex::encode(&keyblob.tag),
-        keyblob.hw_enforced,
-        keyblob.sw_enforced
+        hex::encode(&keyblob.tag)
     );
+    if let Some(kdf_version) = keyblob.kdf_version {
+        println!("  kdf_version={}", kdf_version);
+    }
+    if let Some(addl_info) = keyblob.addl_info {
+        println!("  addl_info={}", addl_info);
+    }
+    println!("  hw_enforced={:?},\n  sw_enforced={:?},", keyblob.hw_enforced, keyblob.sw_enforced);
+    if let Some(key_slot) = keyblob.key_slot {
+        println!("  key_slot={}", key_slot);
+    }
+    println!("}}");
 
     // Also round-trip the keyblob to binary.
     let regenerated_data = keyblob.serialize().unwrap();
