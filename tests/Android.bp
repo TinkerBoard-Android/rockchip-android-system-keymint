@@ -25,9 +25,11 @@ rust_defaults {
         "libenv_logger",
         "libhex",
         "libkmr_common",
+        "libkmr_ta",
         "libkmr_wire",
         "liblazy_static",
         "liblog_rust",
+        "libx509_cert"
     ],
     proc_macros: [
         "libkmr_derive",
