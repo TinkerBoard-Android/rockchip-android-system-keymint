@@ -233,6 +233,14 @@ impl<'a> crate::KeyMintTa<'a> {
         params: &[KeyParam],
         attestation_key: Option<AttestationKey>,
     ) -> Result<KeyCreationResult, Error> {
+        let (key_material, chars) = self.generate_key_material(params)?;
+        self.finish_keyblob_creation(params, attestation_key, chars, key_material)
+    }
+
+    pub(crate) fn generate_key_material(
+        &mut self,
+        params: &[KeyParam],
+    ) -> Result<(KeyMaterial, Vec<KeyCharacteristics>), Error> {
         let (mut chars, keygen_info) = tag::extract_key_gen_characteristics(
             self.secure_storage_available(),
             params,
@@ -262,8 +270,7 @@ impl<'a> crate::KeyMintTa<'a> {
                 self.imp.ec.generate_x25519_key(&mut *self.imp.rng, params)?
             }
         };
-
-        self.finish_keyblob_creation(params, attestation_key, chars, key_material)
+        Ok((key_material, chars))
     }
 
     pub(crate) fn import_key(
@@ -299,7 +306,7 @@ impl<'a> crate::KeyMintTa<'a> {
     }
 
     /// Perform common processing for keyblob creation (for both generation and import).
-    fn finish_keyblob_creation(
+    pub fn finish_keyblob_creation(
         &mut self,
         params: &[KeyParam],
         attestation_key: Option<AttestationKey>,
