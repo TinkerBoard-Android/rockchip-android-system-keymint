@@ -26,6 +26,7 @@ rust_library_host {
     rustlibs: [
         "libciborium",
         "libciborium_io",
+        "libcoset",
         "libder",
         "libflagset",
         "libkmr_common",
