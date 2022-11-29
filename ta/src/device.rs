@@ -11,6 +11,13 @@ use kmr_common::{
 use kmr_wire::keymint;
 use log::error;
 
+/// Context used to derive the hardware backed key for computing HMAC in
+/// IRemotelyProvisionedComponent.
+pub const RPC_HMAC_KEY_CONTEXT: &[u8] = b"Key to MAC public keys";
+
+/// Length (in bytes) of the HMAC key used in IRemotelyProvisionedComponent.
+pub const RPC_HMAC_KEY_LEN: usize = 32;
+
 /// Combined collection of trait implementations that must be provided.
 pub struct Implementation<'a> {
     /// Retrieval of root key material.
@@ -155,17 +162,14 @@ pub trait BootloaderStatus {
 /// the method signatures.
 /// TODO (b/258069484): Add smoke tests to this device trait.
 pub trait RetrieveRpcArtifacts {
-    // Retrieve the hardware backed key used to compute HMAC over the attestation public keys.
-    // If a particular implementation doesn't want the hardware backed keys to leave the hardware,
-    // they can mark this as unimplemented and override the default implementation of
-    // [`compute_hmac_sha256`] below.
-    fn derive_hbk_for_hmac(&self, context: &[u8]) -> Result<crypto::hmac::Key, Error>;
+    // Retrieve secret bytes (of the given output length) from a hardware backed key. For a given
+    // context, the output is deterministic.
+    fn derive_bytes_from_hbk(&self, context: &[u8], output_len: usize) -> Result<Vec<u8>, Error>;
 
     // Compute HMAC_SHA256 over the given input using a hardware backed key.
     fn compute_hmac_sha256(&self, hmac: &dyn crypto::Hmac, input: &[u8]) -> Result<Vec<u8>, Error> {
-        let context = b"Key to MAC public keys";
-        let key = self.derive_hbk_for_hmac(context)?;
-        crypto::hmac_sha256(hmac, &key.0, input)
+        let secret = self.derive_bytes_from_hbk(RPC_HMAC_KEY_CONTEXT, RPC_HMAC_KEY_LEN)?;
+        crypto::hmac_sha256(hmac, &secret, input)
     }
 
     // Retrieve the information about the DICE chain belonging to the IRPC HAL implementation.
@@ -183,6 +187,7 @@ pub trait RetrieveRpcArtifacts {
 }
 
 /// Information about the DICE chain belonging to the implementation of the IRPC HAL.
+#[derive(Clone)]
 pub struct DiceInfo {
     pub pub_dice_artifacts: PubDiceArtifacts,
     pub signing_algorithm: CsrSigningAlgorithm,
@@ -190,23 +195,25 @@ pub struct DiceInfo {
     // cases. The optional test CDI private key may be set here, if the device implementers
     // do not want to cache the test CDI private key across the calls to the `get_dice_info` and
     //`sign_data` methods when creating the CSR.
-    rpc_v2_test_cdi_priv: Option<RpcV2TestCDIPriv>,
+    pub rpc_v2_test_cdi_priv: Option<RpcV2TestCDIPriv>,
 }
 
 /// Algorithm used to sign with the CDI leaf private key.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum CsrSigningAlgorithm {
     ES256,
     EdDSA,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PubDiceArtifacts {
     // Certificates for the UDS Pub encoded in CBOR as per [`AdditionalDKSignatures`] structure in
-    // ProtectedData.aidl for IRPC HAL version 2.
+    // ProtectedData.aidl for IRPC HAL version 2 and as per [`UdsCerts`] structure in IRPC HAL
+    // version 3.
     pub uds_certs: Vec<u8>,
     // UDS Pub and the DICE certificates encoded in CBOR/COSE as per the [`Bcc`] structure
-    // defined in ProtectedData.aidl for IRPC HAL version 2.
+    // defined in ProtectedData.aidl for IRPC HAL version 2 and as per [`DiceCertChain`] structure
+    // in IRPC HAL version 3.
     pub dice_cert_chain: Vec<u8>,
 }
 
@@ -222,6 +229,7 @@ pub enum RpcV2Req<'a> {
 
 // Struct encapsulating the optional CDI private key and the optional opaque context that may be
 // returned with `DiceInfo` in IRPC V2 test mode.
+#[derive(Clone)]
 pub struct RpcV2TestCDIPriv {
     test_cdi_priv: Option<OpaqueOr<crypto::ec::Key>>,
     // An optional opaque blob set by the TA, if the TA wants a mechanism to relate the
@@ -280,7 +288,7 @@ impl RetrieveCertSigningInfo for NoOpRetrieveCertSigningInfo {
 
 pub struct NoOpRetrieveRpcArtifacts;
 impl RetrieveRpcArtifacts for NoOpRetrieveRpcArtifacts {
-    fn derive_hbk_for_hmac(&self, _context: &[u8]) -> Result<crypto::hmac::Key, Error> {
+    fn derive_bytes_from_hbk(&self, _context: &[u8], output_len: usize) -> Result<Vec<u8>, Error> {
         unimpl!();
     }
 
