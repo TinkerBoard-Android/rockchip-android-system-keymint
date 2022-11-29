@@ -1,5 +1,8 @@
 //! KeyMint trusted application (TA) implementation.
 
+// TODO: remove after complete implementing RKP functionality.
+#![allow(dead_code)]
+#![allow(unused)]
 #![no_std]
 extern crate alloc;
 
@@ -7,6 +10,7 @@ use alloc::{boxed::Box, collections::BTreeMap, rc::Rc, string::ToString, vec::Ve
 use core::cmp::Ordering;
 use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
+use device::DiceInfo;
 use kmr_common::{
     crypto::{self, RawKeyMaterial},
     get_bool_tag_value,
@@ -19,6 +23,7 @@ use kmr_wire::{
         Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyMintHardwareInfo, KeyOrigin,
         KeyParam, SecurityLevel, VerifiedBootState,
     },
+    rpc::{EekCurve, IRPC_V2, IRPC_V3},
     secureclock::{TimeStampToken, Timestamp},
     sharedsecret::SharedSecretParameters,
     *,
@@ -79,6 +84,9 @@ pub struct KeyMintTa<'a> {
     /// Information about this particular KeyMint implementation's hardware.
     hw_info: HardwareInfo,
 
+    /// Information about the implementation of the IRemotelyProvisionedComponent (IRPC) HAL.
+    rpc_info: RpcInfo,
+
     /**
      * State that is set after the TA starts, but latched thereafter.
      */
@@ -98,6 +106,13 @@ pub struct KeyMintTa<'a> {
 
     /// Attestation ID information, fixed forever for a device, but retrieved on first use.
     attestation_id_info: RefCell<Option<Rc<AttestationIdInfo>>>,
+
+    // Public DICE artifacts (UDS certs and the DICE chain) included in the certificate signing
+    // requests (CSR) and the algorithm used to sign the CSR for IRemotelyProvisionedComponent
+    // (IRPC) HAL. Fixed for a device. Retrieved on first use.
+    //
+    // Note: This information is cached only in the implementations of IRPC HAL V3 and above.
+    dice_info: RefCell<Option<Rc<DiceInfo>>>,
 
     /// Whether the device is still in early-boot.
     in_early_boot: bool,
@@ -148,9 +163,48 @@ pub struct HardwareInfo {
     pub unique_id: &'static str,
     // The `timestamp_token_required` field in `KeyMintHardwareInfo` is skipped here because it gets
     // set depending on whether a local clock is available.
+}
 
+/// Information required to construct the structures defined in RpcHardwareInfo.aidl
+/// and DeviceInfo.aidl, for IRemotelyProvisionedComponent (IRPC) HAL V2.
+#[derive(Debug)]
+pub struct RpcInfoV2 {
+    // Used in RpcHardwareInfo.aidl
+    pub author_name: &'static str,
+    pub supported_eek_curve: EekCurve,
+    pub unique_id: &'static str,
+    // Used as `DeviceInfo.fused`.
     // Indication of whether secure boot is enforced for the processor running this code.
-    pub fused: bool, // Used as `DeviceInfo.fused` for RKP
+    pub fused: bool,
+}
+
+/// Information required to construct the structures defined in RpcHardwareInfo.aidl
+/// and DeviceInfo.aidl, for IRemotelyProvisionedComponent (IRPC) HAL V3.
+#[derive(Debug)]
+pub struct RpcInfoV3 {
+    // Used in RpcHardwareInfo.aidl
+    pub author_name: &'static str,
+    pub unique_id: &'static str,
+    // Used as `DeviceInfo.fused`.
+    // Indication of whether secure boot is enforced for the processor running this code.
+    pub fused: bool,
+    pub supported_num_of_keys_in_csr: i32,
+}
+
+/// Enum to distinguish the set of information required for different versions of IRPC HAL
+/// implementations
+pub enum RpcInfo {
+    V2(RpcInfoV2),
+    V3(RpcInfoV3),
+}
+
+impl RpcInfo {
+    pub fn get_version(&self) -> i32 {
+        match self {
+            RpcInfo::V2(_) => IRPC_V2,
+            RpcInfo::V3(_) => IRPC_V3,
+        }
+    }
 }
 
 /// Information provided once at service start by the HAL service, describing
@@ -171,6 +225,7 @@ impl<'a> KeyMintTa<'a> {
     /// Create a new [`KeyMintTa`] instance.
     pub fn new(
         hw_info: HardwareInfo,
+        rpc_info: RpcInfo,
         imp: crypto::Implementation<'a>,
         dev: device::Implementation<'a>,
     ) -> Self {
@@ -194,11 +249,13 @@ impl<'a> KeyMintTa<'a> {
             presence_required_op: None,
             shared_secret_params: None,
             hw_info,
+            rpc_info,
             boot_info: None,
             rot_data: None,
             hal_info: None,
             attestation_chain_info: RefCell::new(BTreeMap::new()),
             attestation_id_info: RefCell::new(None),
+            dice_info: RefCell::new(None),
         }
     }
 
@@ -470,6 +527,23 @@ impl<'a> KeyMintTa<'a> {
             }
         }
         self.attestation_id_info.borrow().as_ref().cloned()
+    }
+
+    /// Retrieve the DICE info for the device, if available.
+    fn get_dice_info(&self) -> Option<Rc<DiceInfo>> {
+        // DICE info is cached only for IRPC V3 and above.
+        if self.rpc_info.get_version() < IRPC_V3 {
+            return None;
+        }
+        if self.dice_info.borrow().is_none() {
+            // DICE info is not populated, but we have a trait method that
+            // may provide them.
+            match self.dev.rpc.get_dice_info(false) {
+                Ok(dice_info) => *self.dice_info.borrow_mut() = Some(Rc::new(dice_info)),
+                Err(e) => error!("Failed to retrieve DICE info: {:?}", e),
+            }
+        }
+        self.dice_info.borrow().as_ref().cloned()
     }
 
     /// Process a single serialized request, returning a serialized response.
@@ -1050,13 +1124,19 @@ fn op_error_rsp(op: KeyMintOperation, err: Error) -> PerformOpResponse {
                 error!("encountered non-RKP error on RKP method! {:?}", err);
                 rpc::ErrorCode::Failed
             }
-            Error::Rpc(e, _) => e,
+            Error::Rpc(e, err_msg) => {
+                error!("Returning error code: {:?} in the response due to: {}", e, err_msg);
+                e
+            }
         };
         error_rsp(rpc_err as i32)
     } else {
         let hal_err = match err {
             Error::Cbor(_) | Error::Der(_) => ErrorCode::InvalidArgument,
-            Error::Hal(e, _) => e,
+            Error::Hal(e, err_msg) => {
+                error!("Returning error code: {:?} in the response due to: {}", e, err_msg);
+                e
+            }
             Error::Rpc(_, _) => {
                 error!("encountered RKP error on non-RKP method! {:?}", err);
                 ErrorCode::UnknownError

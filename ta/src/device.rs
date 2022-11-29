@@ -1,9 +1,12 @@
 //! Traits representing access to device-specific information and functionality.
 
+// TODO: remove after complete implementing RKP functionality.
+#![allow(dead_code)]
 use alloc::{boxed::Box, vec::Vec};
+
 use kmr_common::{
-    crypto, crypto::aes, crypto::KeyMaterial, crypto::RawKeyMaterial, keyblob, log_unimpl, unimpl,
-    Error,
+    crypto, crypto::aes, crypto::KeyMaterial, crypto::OpaqueOr, crypto::RawKeyMaterial, keyblob,
+    log_unimpl, unimpl, Error,
 };
 use kmr_wire::keymint;
 use log::error;
@@ -35,6 +38,10 @@ pub struct Implementation<'a> {
 
     /// Legacy key conversion handling.
     pub legacy_key: Option<&'a mut dyn keyblob::LegacyKeyHandler>,
+
+    /// Retrieval of artifacts related to the device implementation of IRemotelyProvisionedComponent
+    /// (IRPC) HAL.
+    pub rpc: &'a dyn RetrieveRpcArtifacts,
 }
 
 /// Functionality related to retrieval of device-specific key material, and its subsequent use.
@@ -136,6 +143,86 @@ pub trait BootloaderStatus {
     }
 }
 
+/// The trait that represents the device specific integration points required for the
+/// implementation of IRemotelyProvisionedComponent (IRPC) HAL.
+/// Note: The devices only supporting IRPC V3+ may ignore the optional IRPC V2 specific types in
+/// the method signatures.
+/// TODO (b/258069484): Add smoke tests to this device trait.
+pub trait RetrieveRpcArtifacts {
+    // Retrieve the hardware backed key used to compute HMAC over the attestation public keys.
+    // If a particular implementation doesn't want the hardware backed keys to leave the hardware,
+    // they can mark this as unimplemented and override the default implementation of
+    // [`compute_hmac_sha256`] below.
+    fn derive_hbk_for_hmac(&self, context: &[u8]) -> Result<crypto::hmac::Key, Error>;
+
+    // Compute HMAC_SHA256 over the given input using a hardware backed key.
+    fn compute_hmac_sha256(&self, hmac: &dyn crypto::Hmac, input: &[u8]) -> Result<Vec<u8>, Error> {
+        let context = b"Key to MAC public keys";
+        let key = self.derive_hbk_for_hmac(context)?;
+        crypto::hmac_sha256(hmac, &key.0, input)
+    }
+
+    // Retrieve the information about the DICE chain belonging to the IRPC HAL implementation.
+    fn get_dice_info(&self, test_mode: bool) -> Result<DiceInfo, Error>;
+
+    // Sign the input data with the CDI leaf private key of the IRPC HAL implementation. In IRPC V2,
+    // the `data` to be signed is the [`SignedMac_structure`] in ProtectedData.aidl, when signing
+    // the ephemeral MAC key used to authenticate the public keys.
+    fn sign_data<'a>(
+        &self,
+        ec: &dyn crypto::Ec,
+        data: &[u8],
+        rpc_v2: Option<RpcV2Req<'a>>,
+    ) -> Result<Vec<u8>, Error>;
+}
+
+/// Information about the DICE chain belonging to the implementation of the IRPC HAL.
+pub struct DiceInfo {
+    pub pub_dice_artifacts: PubDiceArtifacts,
+    pub signing_algorithm: CsrSigningAlgorithm,
+    // This is only relevant for IRPC HAL V2 when `test_mode` is true. This is ignored in all other
+    // cases. The optional test CDI private key may be set here, if the device implementers
+    // do not want to cache the test CDI private key across the calls to the `get_dice_info` and
+    //`sign_data` methods when creating the CSR.
+    rpc_v2_test_cdi_priv: Option<RpcV2TestCDIPriv>,
+}
+
+/// Algorithm used to sign with the CDI leaf private key.
+#[derive(Debug)]
+pub enum CsrSigningAlgorithm {
+    ES256,
+    EdDSA,
+}
+
+#[derive(Debug)]
+pub struct PubDiceArtifacts {
+    // Certificates for the UDS Pub encoded in CBOR as per [`AdditionalDKSignatures`] structure in
+    // ProtectedData.aidl for IRPC HAL version 2.
+    pub uds_certs: Vec<u8>,
+    // UDS Pub and the DICE certificates encoded in CBOR/COSE as per the [`Bcc`] structure
+    // defined in ProtectedData.aidl for IRPC HAL version 2.
+    pub dice_cert_chain: Vec<u8>,
+}
+
+// Enum distinguishing the two modes of operation for IRPC HAL V2, allowing an optional context
+// information to be passed in for the test mode.
+pub enum RpcV2Req<'a> {
+    Production,
+    // An opaque blob may be passed in for the test mode, if it was returned by the TA in
+    // `RkpV2TestCDIPriv.context` in order to link the two requests: `get_dice_info` and `sign_data`
+    // related to the same CSR.
+    Test(&'a [u8]),
+}
+
+// Struct encapsulating the optional CDI private key and the optional opaque context that may be
+// returned with `DiceInfo` in IRPC V2 test mode.
+pub struct RpcV2TestCDIPriv {
+    test_cdi_priv: Option<OpaqueOr<crypto::ec::Key>>,
+    // An optional opaque blob set by the TA, if the TA wants a mechanism to relate the
+    // two requests: `get_dice_info` and `sign_data` related to the same CSR.
+    context: Vec<u8>,
+}
+
 /// Marker implementation for implementations that do not support `BOOTLOADER_ONLY` keys, which
 /// always indicates that bootloader processing is complete.
 pub struct BootloaderDone;
@@ -181,6 +268,26 @@ impl RetrieveCertSigningInfo for NoOpRetrieveCertSigningInfo {
     }
 
     fn cert_chain(&self, _key_type: SigningKeyType) -> Result<Vec<keymint::Certificate>, Error> {
+        unimpl!();
+    }
+}
+
+pub struct NoOpRetrieveRpcArtifacts;
+impl RetrieveRpcArtifacts for NoOpRetrieveRpcArtifacts {
+    fn derive_hbk_for_hmac(&self, _context: &[u8]) -> Result<crypto::hmac::Key, Error> {
+        unimpl!();
+    }
+
+    fn get_dice_info<'a>(&self, _test_mode: bool) -> Result<DiceInfo, Error> {
+        unimpl!();
+    }
+
+    fn sign_data<'a>(
+        &self,
+        _ec: &dyn crypto::Ec,
+        _data: &[u8],
+        _rpc_v2: Option<RpcV2Req<'a>>,
+    ) -> Result<Vec<u8>, Error> {
         unimpl!();
     }
 }
