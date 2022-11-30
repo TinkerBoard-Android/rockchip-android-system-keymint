@@ -12,7 +12,7 @@ use core::mem::size_of;
 use core::{cell::RefCell, convert::TryFrom};
 use device::DiceInfo;
 use kmr_common::{
-    crypto::{self, RawKeyMaterial},
+    crypto::{self, hmac, RawKeyMaterial},
     get_bool_tag_value,
     keyblob::{self, RootOfTrustInfo, SecureDeletionSlot},
     km_err, tag, vec_try, vec_try_with_capacity, Error, FallibleAllocExt,
@@ -256,6 +256,14 @@ impl<'a> KeyMintTa<'a> {
             attestation_chain_info: RefCell::new(BTreeMap::new()),
             attestation_id_info: RefCell::new(None),
             dice_info: RefCell::new(None),
+        }
+    }
+
+    /// Returns key used to sign auth tokens
+    pub fn get_hmac_key(&self) -> Option<hmac::Key> {
+        match &self.device_hmac {
+            Some(device_hmac) => device_hmac.get_hmac_key(),
+            None => None,
         }
     }
 
