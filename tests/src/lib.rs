@@ -5,7 +5,7 @@ use kmr_common::crypto::{
     aes, des, hmac, Aes, AesCmac, Ckdf, ConstTimeEq, Des, Hkdf, Hmac, MonotonicClock, Rng,
     SymmetricOperation,
 };
-use kmr_common::keyblob;
+use kmr_common::{keyblob, keyblob::SlotPurpose};
 use kmr_wire::keymint::Digest;
 use std::collections::HashMap;
 
@@ -504,12 +504,12 @@ pub fn test_des<D: Des>(des: D) {
 }
 
 pub fn test_sdd_mgr<M: keyblob::SecureDeletionSecretManager, R: Rng>(mut sdd_mgr: M, mut rng: R) {
-    let (slot1, sdd1) = sdd_mgr.new_secret(&mut rng).unwrap();
+    let (slot1, sdd1) = sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).unwrap();
     assert!(sdd_mgr.get_secret(slot1).unwrap() == sdd1);
     assert!(sdd_mgr.get_secret(slot1).unwrap() == sdd1);
 
     // A second instance should share factory reset secret but not per-key secret.
-    let (slot2, sdd2) = sdd_mgr.new_secret(&mut rng).unwrap();
+    let (slot2, sdd2) = sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).unwrap();
     assert!(sdd_mgr.get_secret(slot2).unwrap() == sdd2);
     assert_eq!(sdd1.factory_reset_secret, sdd2.factory_reset_secret);
     assert_ne!(sdd1.secure_deletion_secret, sdd2.secure_deletion_secret);
