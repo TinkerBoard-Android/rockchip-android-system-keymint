@@ -643,6 +643,7 @@ impl keyblob::SecureDeletionSecretManager for NoOpSdsManager {
     fn new_secret(
         &mut self,
         _rng: &mut dyn Rng,
+        _purpose: keyblob::SlotPurpose,
     ) -> Result<(keyblob::SecureDeletionSlot, keyblob::SecureDeletionData), Error> {
         unimpl!();
     }

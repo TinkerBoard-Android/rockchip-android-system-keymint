@@ -234,7 +234,13 @@ impl<'a> crate::KeyMintTa<'a> {
         attestation_key: Option<AttestationKey>,
     ) -> Result<KeyCreationResult, Error> {
         let (key_material, chars) = self.generate_key_material(params)?;
-        self.finish_keyblob_creation(params, attestation_key, chars, key_material)
+        self.finish_keyblob_creation(
+            params,
+            attestation_key,
+            chars,
+            key_material,
+            keyblob::SlotPurpose::KeyGeneration,
+        )
     }
 
     pub(crate) fn generate_key_material(
@@ -302,7 +308,13 @@ impl<'a> crate::KeyMintTa<'a> {
             }
         }
 
-        self.finish_keyblob_creation(params, attestation_key, chars, key_material)
+        self.finish_keyblob_creation(
+            params,
+            attestation_key,
+            chars,
+            key_material,
+            keyblob::SlotPurpose::KeyImport,
+        )
     }
 
     /// Perform common processing for keyblob creation (for both generation and import).
@@ -312,6 +324,7 @@ impl<'a> crate::KeyMintTa<'a> {
         attestation_key: Option<AttestationKey>,
         chars: Vec<KeyCharacteristics>,
         key_material: KeyMaterial,
+        purpose: keyblob::SlotPurpose,
     ) -> Result<KeyCreationResult, Error> {
         let keyblob = keyblob::PlaintextKeyBlob {
             // Don't include any `SecurityLevel::Keystore` characteristics in the set that is bound
@@ -457,6 +470,7 @@ impl<'a> crate::KeyMintTa<'a> {
             &kek_context,
             keyblob,
             hidden,
+            purpose,
         )?;
         let serialized_keyblob = encrypted_keyblob.into_vec()?;
 
@@ -633,9 +647,9 @@ impl<'a> crate::KeyMintTa<'a> {
         keyblob_to_upgrade: &[u8],
         upgrade_params: Vec<KeyParam>,
     ) -> Result<Vec<u8>, Error> {
-        let (mut keyblob, sdd_slot) =
+        let mut keyblob =
             match self.keyblob_parse_decrypt_backlevel(keyblob_to_upgrade, &upgrade_params) {
-                Ok(v) => v,
+                Ok(v) => v.0,
                 Err(Error::Hal(ErrorCode::KeyRequiresUpgrade, _)) => {
                     // Because `keyblob_parse_decrypt_backlevel` explicitly allows back-level
                     // versioned keys, a `KeyRequiresUpgrade` error indicates that the keyblob looks
@@ -645,15 +659,14 @@ impl<'a> crate::KeyMintTa<'a> {
                         .legacy_key
                         .as_mut()
                         .ok_or_else(|| km_err!(UnknownError, "no legacy key handler"))?;
-                    let keyblob = legacy_handler.convert_legacy_key(
+                    legacy_handler.convert_legacy_key(
                         keyblob_to_upgrade,
                         &upgrade_params,
                         self.boot_info
                             .as_ref()
                             .ok_or_else(|| km_err!(HardwareNotYetAvailable, "no boot info"))?,
                         self.hw_info.security_level,
-                    )?;
-                    (keyblob, None)
+                    )?
                 }
                 Err(e) => return Err(e),
             };
@@ -731,28 +744,9 @@ impl<'a> crate::KeyMintTa<'a> {
             return Ok(Vec::new());
         }
 
-        // Need a new keyblob, so free up any existing secure deletion slot. (Re-encryption below
-        // will use a new slot and secret.)
-        match (sdd_slot, &mut self.dev.sdd_mgr) {
-            (Some(slot), Some(mgr)) => {
-                if let Err(e) = mgr.delete_secret(slot) {
-                    error!(
-                        "failed to delete secret for slot {:?} ({:?}): potential leak of slot!",
-                        slot, e
-                    );
-                }
-            }
-            (Some(slot), None) => {
-                return Err(km_err!(
-                    UnknownError,
-                    "keyblob has sdd slot {:?} but no secure storage available!",
-                    slot
-                ));
-            }
-            (None, _) => {}
-        }
-
-        // Now re-build the keyblob. Use a potentially fresh key encryption key.
+        // Now re-build the keyblob. Use a potentially fresh key encryption key, and potentially a
+        // new secure deletion secret slot. (The old slot will be released when Keystore performs
+        // the corresponding `deleteKey` operation on the old keyblob.
         let kek_context = self.dev.keys.kek_context()?;
         let root_kek = self.root_kek(&kek_context)?;
         let hidden = tag::hidden(&upgrade_params, self.root_of_trust()?)?;
@@ -769,6 +763,7 @@ impl<'a> crate::KeyMintTa<'a> {
             &kek_context,
             keyblob,
             hidden,
+            keyblob::SlotPurpose::KeyUpgrade,
         )?;
         Ok(encrypted_keyblob.into_vec()?)
     }
