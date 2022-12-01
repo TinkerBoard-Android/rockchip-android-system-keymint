@@ -79,6 +79,12 @@ pub trait RetrieveKeyMaterial {
 pub trait DeviceHmac {
     /// Calculate the HMAC over the data using the agreed device HMAC key.
     fn hmac(&self, imp: &dyn crypto::Hmac, data: &[u8]) -> Result<Vec<u8>, Error>;
+
+    /// Returns the key used for HMAC'ing data if available
+    fn get_hmac_key(&self) -> Option<crypto::hmac::Key> {
+        // By default we assume that the implementation cannot return a key
+        None
+    }
 }
 
 /// Identification of which attestation signing key is required.
