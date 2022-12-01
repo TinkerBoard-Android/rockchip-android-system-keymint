@@ -1,5 +1,6 @@
 use super::{
     sdd_mem::InMemorySlotManager, SecureDeletionSecretManager, SecureDeletionSlot, SlotHolder,
+    SlotPurpose,
 };
 
 #[derive(Default)]
@@ -19,12 +20,14 @@ impl crate::crypto::Rng for FakeRng {
 fn test_sdd_slot_holder() {
     let mut sdd_mgr = InMemorySlotManager::<10>::default();
     let mut rng = FakeRng::default();
-    let (slot_holder0, sdd0) = SlotHolder::new(&mut sdd_mgr, &mut rng).unwrap();
+    let (slot_holder0, sdd0) =
+        SlotHolder::new(&mut sdd_mgr, &mut rng, SlotPurpose::KeyGeneration).unwrap();
     let slot0 = slot_holder0.consume();
     assert_eq!(slot0, SecureDeletionSlot(0));
     assert!(sdd_mgr.get_secret(slot0).unwrap() == sdd0);
 
-    let (slot_holder1, sdd1) = SlotHolder::new(&mut sdd_mgr, &mut rng).unwrap();
+    let (slot_holder1, sdd1) =
+        SlotHolder::new(&mut sdd_mgr, &mut rng, SlotPurpose::KeyGeneration).unwrap();
     let slot1 = slot_holder1.consume();
     assert_eq!(slot1, SecureDeletionSlot(1));
     assert!(sdd_mgr.get_secret(slot1).unwrap() == sdd1);
@@ -34,12 +37,14 @@ fn test_sdd_slot_holder() {
     assert!(sdd0 != sdd1);
 
     // If the slot holder is dropped rather than consumed, it should free the slot.
-    let (slot_holder2, _sdd2a) = SlotHolder::new(&mut sdd_mgr, &mut rng).unwrap();
+    let (slot_holder2, _sdd2a) =
+        SlotHolder::new(&mut sdd_mgr, &mut rng, SlotPurpose::KeyGeneration).unwrap();
     drop(slot_holder2);
     assert!(sdd_mgr.get_secret(SecureDeletionSlot(2)).is_err());
 
     // Slot 2 is available again.
-    let (slot_holder2, sdd2b) = SlotHolder::new(&mut sdd_mgr, &mut rng).unwrap();
+    let (slot_holder2, sdd2b) =
+        SlotHolder::new(&mut sdd_mgr, &mut rng, SlotPurpose::KeyGeneration).unwrap();
     let slot2 = slot_holder2.consume();
     assert_eq!(slot2, SecureDeletionSlot(2));
     assert!(sdd_mgr.get_secret(slot2).unwrap() == sdd2b);
@@ -61,11 +66,11 @@ fn test_sdd_factory_secret() {
 fn test_sdd_exhaustion() {
     let mut sdd_mgr = InMemorySlotManager::<2>::default();
     let mut rng = FakeRng::default();
-    let (_slot0, _sdd0) = sdd_mgr.new_secret(&mut rng).unwrap();
-    let (slot1a, sdd1a) = sdd_mgr.new_secret(&mut rng).unwrap();
-    assert!(sdd_mgr.new_secret(&mut rng).is_err());
+    let (_slot0, _sdd0) = sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).unwrap();
+    let (slot1a, sdd1a) = sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).unwrap();
+    assert!(sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).is_err());
     sdd_mgr.delete_secret(slot1a).unwrap();
-    let (slot1b, sdd1b) = sdd_mgr.new_secret(&mut rng).unwrap();
+    let (slot1b, sdd1b) = sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).unwrap();
     assert_eq!(slot1a, slot1b);
     assert!(sdd1a != sdd1b);
 }
