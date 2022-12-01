@@ -76,4 +76,8 @@ impl DeviceHmac for SoftDeviceHmac {
         hmac_op.update(data)?;
         hmac_op.finish()
     }
+
+    fn get_hmac_key(&self) -> Option<crypto::hmac::Key> {
+        Some(self.key.clone())
+    }
 }
