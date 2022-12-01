@@ -144,6 +144,14 @@ pub struct SecureDeletionData {
     pub secure_deletion_secret: [u8; 16],
 }
 
+/// Indication of what kind of key operation requires a secure deletion slot.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SlotPurpose {
+    KeyGeneration,
+    KeyImport,
+    KeyUpgrade,
+}
+
 /// Manager for the mapping between secure deletion slots and the corresponding
 /// [`SecureDeletionData`] instances.
 pub trait SecureDeletionSecretManager {
@@ -160,10 +168,13 @@ pub trait SecureDeletionSecretManager {
     fn get_factory_reset_secret(&self) -> Result<SecureDeletionData, Error>;
 
     /// Find an empty slot, populate it with a fresh [`SecureDeletionData`] that includes a per-key
-    /// secret, and return the slot.
+    /// secret, and return the slot. If the purpose is `SlotPurpose::KeyUpgrade`, there will be a
+    /// subsequent call to `delete_secret()` for the slot associated with the original keyblob;
+    /// implementations should reserve additional expansion space to allow for this.
     fn new_secret(
         &mut self,
         rng: &mut dyn crypto::Rng,
+        purpose: SlotPurpose,
     ) -> Result<(SecureDeletionSlot, SecureDeletionData), Error>;
 
     /// Retrieve a [`SecureDeletionData`] identified by `slot`.
@@ -197,8 +208,9 @@ impl<'a> SlotHolder<'a> {
     fn new(
         mgr: &'a mut dyn SecureDeletionSecretManager,
         rng: &mut dyn crypto::Rng,
+        purpose: SlotPurpose,
     ) -> Result<(Self, SecureDeletionData), Error> {
-        let (slot, sdd) = mgr.new_secret(rng)?;
+        let (slot, sdd) = mgr.new_secret(rng, purpose)?;
         Ok((Self { mgr, slot: Some(slot) }, sdd))
     }
 
@@ -282,6 +294,7 @@ pub fn encrypt(
     kek_context: &[u8],
     plaintext_keyblob: PlaintextKeyBlob,
     hidden: Vec<KeyParam>,
+    purpose: SlotPurpose,
 ) -> Result<EncryptedKeyBlob, Error> {
     // Determine if secure deletion is required by examining the key characteristics at our
     // security level.
@@ -293,7 +306,7 @@ pub fn encrypt(
         (true, Some(sdd_mgr)) => {
             // Reserve a slot and store it in a [`SlotHolder`] so that it will definitely be
             // released if there are any errors encountered below.
-            let (holder, sdd) = SlotHolder::new(sdd_mgr, rng)?;
+            let (holder, sdd) = SlotHolder::new(sdd_mgr, rng, purpose)?;
             (Some(holder), Some(sdd))
         }
         (true, None) => {

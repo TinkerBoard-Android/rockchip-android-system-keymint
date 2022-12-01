@@ -11,7 +11,7 @@ use alloc::string::{String, ToString};
 use alloc::{vec, vec::Vec};
 use der::{asn1::OctetString, Decode};
 use kmr_common::crypto::{ec::CoseKeyPurpose, KeyMaterial};
-use kmr_common::{km_err, rpc_err, try_to_vec, Error, FallibleAllocExt};
+use kmr_common::{keyblob, km_err, rpc_err, try_to_vec, Error, FallibleAllocExt};
 use kmr_wire::read_to_value;
 use kmr_wire::rpc::{AUTH_REQ_SCHEMA_V1, CERT_TYPE_KEYMINT, IRPC_V2, IRPC_V3};
 use kmr_wire::{
@@ -156,8 +156,13 @@ impl<'a> KeyMintTa<'a> {
                 self.dev.rpc.compute_hmac_sha256(self.imp.hmac, data)
             })?;
 
-        let key_result =
-            self.finish_keyblob_creation(&RPC_P256_KEYGEN_PARAMS, None, chars, key_material)?;
+        let key_result = self.finish_keyblob_creation(
+            &RPC_P256_KEYGEN_PARAMS,
+            None,
+            chars,
+            key_material,
+            keyblob::SlotPurpose::KeyGeneration,
+        )?;
 
         Ok((MacedPublicKey { maced_key: maced_pub_key }, key_result.key_blob))
     }

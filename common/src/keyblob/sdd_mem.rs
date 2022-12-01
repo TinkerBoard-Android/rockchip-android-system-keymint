@@ -1,6 +1,6 @@
 //! In-memory secure deletion secret manager.
 
-use super::{SecureDeletionData, SecureDeletionSecretManager, SecureDeletionSlot};
+use super::{SecureDeletionData, SecureDeletionSecretManager, SecureDeletionSlot, SlotPurpose};
 use crate::{crypto, km_err, Error};
 
 /// Secure deletion secret manager that keeps state in memory. Provided as an example only; do not
@@ -47,6 +47,7 @@ impl<const N: usize> SecureDeletionSecretManager for InMemorySlotManager<N> {
     fn new_secret(
         &mut self,
         rng: &mut dyn crypto::Rng,
+        _purpose: SlotPurpose,
     ) -> Result<(SecureDeletionSlot, SecureDeletionData), Error> {
         for idx in 0..N {
             if self.slots[idx].is_none() {
