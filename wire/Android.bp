@@ -29,11 +29,31 @@ rust_library {
         "libciborium_io",
         "libcoset",
         "liblog_rust",
+        "libzeroize",
     ],
     proc_macros: [
         "libenumn",
         "libkmr_derive",
     ],
+}
+
+rust_test_host {
+    name: "libkmr_wire_test",
+    crate_name: "kmr_wire_test",
+    srcs: ["src/lib.rs"],
+    rustlibs: [
+        "libciborium",
+        "libciborium_io",
+        "libcoset",
+        "libhex",
+        "liblog_rust",
+        "libzeroize",
+    ],
+    proc_macros: [
+        "libenumn",
+        "libkmr_derive",
+    ],
+    test_suites: ["general-tests"],
 }
 
 rust_fuzz {

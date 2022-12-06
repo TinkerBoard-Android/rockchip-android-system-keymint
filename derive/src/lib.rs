@@ -476,3 +476,108 @@ fn from_raw_tag(name: &Ident, data: &Data) -> TokenStream {
         _ => unimplemented!(),
     }
 }
+
+/// Derive macro that implements the `legacy::InnerSerialize` trait.  Using this macro requires
+/// that `InnerSerialize` and `Error` from `kmr_wire::legacy` be locally `use`d.
+#[proc_macro_derive(LegacySerialize)]
+pub fn derive_legacy_serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    derive_legacy_serialize_internal(&input)
+}
+
+fn derive_legacy_serialize_internal(input: &DeriveInput) -> proc_macro::TokenStream {
+    let name = &input.ident;
+
+    let deserialize_val = deserialize_struct(&input.data);
+    let serialize_val = serialize_struct(&input.data);
+
+    let expanded = quote! {
+        impl InnerSerialize for #name {
+            fn deserialize(data: &[u8]) -> Result<(Self, &[u8]), Error> {
+                #deserialize_val
+            }
+            fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error> {
+                #serialize_val
+            }
+        }
+    };
+
+    expanded.into()
+}
+
+fn deserialize_struct(data: &Data) -> TokenStream {
+    match data {
+        Data::Struct(ref data) => {
+            match data.fields {
+                Fields::Named(ref fields) => {
+                    // Expands to an expression like
+                    //
+                    //     let (x, data) = <XType>::deserialize(data)?;
+                    //     let (y, data) = <YType>::deserialize(data)?;
+                    //     let (z, data) = <ZType>::deserialize(data)?;
+                    //     Ok((Self {
+                    //             x,
+                    //             y,
+                    //             z,
+                    //     }, data))
+                    //
+                    let recurse1 = fields.named.iter().map(|f| {
+                        let name = &f.ident;
+                        let typ = &f.ty;
+                        quote_spanned! {f.span()=>
+                                        let (#name, data) = <#typ>::deserialize(data)?;
+                        }
+                    });
+                    let recurse2 = fields.named.iter().map(|f| {
+                        let name = &f.ident;
+                        quote_spanned! {f.span()=>
+                                        #name
+                        }
+                    });
+                    quote! {
+                        #(#recurse1)*
+                        Ok((Self {
+                            #(#recurse2, )*
+                        }, data))
+                    }
+                }
+                Fields::Unnamed(_) => unimplemented!(),
+                Fields::Unit => unimplemented!(),
+            }
+        }
+        Data::Enum(_) => unimplemented!(),
+        Data::Union(_) => unimplemented!(),
+    }
+}
+
+fn serialize_struct(data: &Data) -> TokenStream {
+    match data {
+        Data::Struct(ref data) => {
+            match data.fields {
+                Fields::Named(ref fields) => {
+                    // Expands to an expression like
+                    //
+                    //     self.x.serialize_into(buf)?;
+                    //     self.y.serialize_into(buf)?;
+                    //     self.z.serialize_into(buf)?;
+                    //     Ok(())
+                    //
+                    let recurse = fields.named.iter().map(|f| {
+                        let name = &f.ident;
+                        quote_spanned! {f.span()=>
+                                        self.#name.serialize_into(buf)?;
+                        }
+                    });
+                    quote! {
+                        #(#recurse)*
+                        Ok(())
+                    }
+                }
+                Fields::Unnamed(_) => unimplemented!(),
+                Fields::Unit => unimplemented!(),
+            }
+        }
+        Data::Enum(_) => unimplemented!(),
+        Data::Union(_) => unimplemented!(),
+    }
+}
