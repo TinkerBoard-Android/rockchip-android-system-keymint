@@ -16,6 +16,7 @@ pub use ciborium as cbor;
 pub use coset;
 
 pub mod keymint;
+pub mod legacy;
 pub mod rpc;
 pub mod secureclock;
 pub mod sharedsecret;
