@@ -18,6 +18,10 @@ pub const AUTH_REQ_SCHEMA_V1: i32 = 1;
 /// `CertificateType` for keymint
 pub const CERT_TYPE_KEYMINT: &str = "keymint";
 
+/// Indication of whether RKP is operating in test mode. (Only relevant for RKP v1 and v2.)
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TestMode(pub bool);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i32)]
 pub enum ErrorCode {
