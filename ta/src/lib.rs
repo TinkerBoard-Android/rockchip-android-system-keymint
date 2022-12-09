@@ -23,6 +23,7 @@ use kmr_wire::{
         Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyMintHardwareInfo, KeyOrigin,
         KeyParam, SecurityLevel, VerifiedBootState,
     },
+    rpc,
     rpc::{EekCurve, IRPC_V2, IRPC_V3},
     secureclock::{TimeStampToken, Timestamp},
     sharedsecret::SharedSecretParameters,
@@ -543,7 +544,7 @@ impl<'a> KeyMintTa<'a> {
         if self.dice_info.borrow().is_none() {
             // DICE info is not populated, but we have a trait method that
             // may provide them.
-            match self.dev.rpc.get_dice_info(false) {
+            match self.dev.rpc.get_dice_info(rpc::TestMode(false)) {
                 Ok(dice_info) => *self.dice_info.borrow_mut() = Some(Rc::new(dice_info)),
                 Err(e) => error!("Failed to retrieve DICE info: {:?}", e),
             }
@@ -817,7 +818,7 @@ impl<'a> KeyMintTa<'a> {
                 Err(e) => op_error_rsp(GetRpcHardwareInfoRequest::CODE, e),
             },
             PerformOpReq::RpcGenerateEcdsaP256KeyPair(req) => {
-                match self.generate_ecdsa_p256_keypair(req.test_mode) {
+                match self.generate_ecdsa_p256_keypair(rpc::TestMode(req.test_mode)) {
                     Ok((pubkey, ret)) => op_ok_rsp(PerformOpRsp::RpcGenerateEcdsaP256KeyPair(
                         GenerateEcdsaP256KeyPairResponse { maced_public_key: pubkey, ret },
                     )),
@@ -826,7 +827,7 @@ impl<'a> KeyMintTa<'a> {
             }
             PerformOpReq::RpcGenerateCertificateRequest(req) => {
                 match self.generate_cert_req(
-                    req.test_mode,
+                    rpc::TestMode(req.test_mode),
                     req.keys_to_sign,
                     &req.endpoint_encryption_cert_chain,
                     &req.challenge,

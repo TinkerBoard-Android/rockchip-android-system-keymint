@@ -8,7 +8,7 @@ use kmr_common::{
     crypto, crypto::aes, crypto::KeyMaterial, crypto::OpaqueOr, crypto::RawKeyMaterial, keyblob,
     log_unimpl, unimpl, Error,
 };
-use kmr_wire::keymint;
+use kmr_wire::{keymint, rpc};
 use log::error;
 
 /// Context used to derive the hardware backed key for computing HMAC in
@@ -173,7 +173,7 @@ pub trait RetrieveRpcArtifacts {
     }
 
     // Retrieve the information about the DICE chain belonging to the IRPC HAL implementation.
-    fn get_dice_info(&self, test_mode: bool) -> Result<DiceInfo, Error>;
+    fn get_dice_info(&self, test_mode: rpc::TestMode) -> Result<DiceInfo, Error>;
 
     // Sign the input data with the CDI leaf private key of the IRPC HAL implementation. In IRPC V2,
     // the `data` to be signed is the [`SignedMac_structure`] in ProtectedData.aidl, when signing
@@ -292,7 +292,7 @@ impl RetrieveRpcArtifacts for NoOpRetrieveRpcArtifacts {
         unimpl!();
     }
 
-    fn get_dice_info<'a>(&self, _test_mode: bool) -> Result<DiceInfo, Error> {
+    fn get_dice_info<'a>(&self, _test_mode: rpc::TestMode) -> Result<DiceInfo, Error> {
         unimpl!();
     }
 
