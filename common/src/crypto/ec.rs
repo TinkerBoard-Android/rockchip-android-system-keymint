@@ -4,7 +4,7 @@ use super::{CurveType, KeyMaterial, OpaqueOr};
 use crate::{km_err, try_to_vec, Error, FallibleAllocExt};
 use alloc::vec::Vec;
 use der::AnyRef;
-use kmr_wire::{coset, keymint::EcCurve, KeySizeInBits};
+use kmr_wire::{coset, keymint::EcCurve, rpc, KeySizeInBits};
 use spki::{AlgorithmIdentifier, SubjectPublicKeyInfo};
 use zeroize::ZeroizeOnDrop;
 
@@ -174,7 +174,7 @@ impl OpaqueOr<Key> {
         curve_type: CurveType,
         purpose: CoseKeyPurpose,
         key_id: Option<Vec<u8>>,
-        test_mode: bool,
+        test_mode: rpc::TestMode,
     ) -> Result<coset::CoseKey, Error> {
         let nist_algo = match purpose {
             CoseKeyPurpose::Agree => coset::iana::Algorithm::ECDH_ES_HKDF_256,
@@ -223,7 +223,7 @@ impl OpaqueOr<Key> {
         if let Some(key_id) = key_id {
             builder = builder.key_id(key_id);
         }
-        if test_mode {
+        if test_mode == rpc::TestMode(true) {
             builder = builder.param(RKP_TEST_KEY_CBOR_MARKER, coset::cbor::value::Value::Null);
         }
         Ok(builder.build())

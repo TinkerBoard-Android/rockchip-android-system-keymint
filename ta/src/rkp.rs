@@ -15,8 +15,6 @@ use kmr_common::crypto::{
     hmac_sha256, KeyMaterial,
 };
 use kmr_common::{keyblob, km_err, rpc_err, try_to_vec, Error, FallibleAllocExt};
-use kmr_wire::read_to_value;
-use kmr_wire::rpc::{AUTH_REQ_SCHEMA_V1, CERT_TYPE_KEYMINT, IRPC_V2, IRPC_V3};
 use kmr_wire::{
     cbor,
     cbor::cbor,
@@ -24,10 +22,12 @@ use kmr_wire::{
         Algorithm, DateTime, Digest, EcCurve, KeyCreationResult, KeyParam, KeyPurpose,
         SecurityLevel, VerifiedBootState,
     },
+    read_to_value, rpc,
     rpc::{
         DeviceInfo, EekCurve, HardwareInfo, MacedPublicKey, ProtectedData,
         MINIMUM_SUPPORTED_KEYS_IN_CSR,
     },
+    rpc::{AUTH_REQ_SCHEMA_V1, CERT_TYPE_KEYMINT, IRPC_V2, IRPC_V3},
     types::KeySizeInBits,
     CborError,
 };
@@ -133,7 +133,7 @@ impl<'a> KeyMintTa<'a> {
 
     pub(crate) fn generate_ecdsa_p256_keypair(
         &mut self,
-        mut test_mode: bool,
+        mut test_mode: rpc::TestMode,
     ) -> Result<(MacedPublicKey, Vec<u8>), Error> {
         let (key_material, chars) = self.generate_key_material(&RPC_P256_KEYGEN_PARAMS)?;
 
@@ -152,7 +152,7 @@ impl<'a> KeyMintTa<'a> {
         let maced_pub_key =
             build_maced_pub_key(pub_cose_key_encoded, |data| -> Result<Vec<u8>, Error> {
                 // In test mode, use an all-zero HMAC key.
-                if test_mode {
+                if test_mode == rpc::TestMode(true) {
                     return hmac_sha256(self.imp.hmac, &[0; 32], data);
                 }
                 self.dev.rpc.compute_hmac_sha256(self.imp.hmac, data)
@@ -171,7 +171,7 @@ impl<'a> KeyMintTa<'a> {
 
     pub(crate) fn generate_cert_req(
         &self,
-        _test_mode: bool,
+        test_mode: rpc::TestMode,
         _keys_to_sign: Vec<MacedPublicKey>,
         _eek_chain: &[u8],
         _challenge: &[u8],
