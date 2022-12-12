@@ -925,8 +925,16 @@ impl<'a> KeyMintTa<'a> {
                 }
             }
         } else {
-            error!("failed to parse keyblob, ignoring");
+            // We might have failed to parse the keyblob because it is in some prior format.
+            if let Some(old_key) = self.dev.legacy_key.as_mut() {
+                if let Err(e) = old_key.delete_legacy_key(keyblob) {
+                    error!("failed to parse keyblob as legacy, ignoring");
+                }
+            } else {
+                error!("failed to parse keyblob, ignoring");
+            }
         }
+
         Ok(())
     }
 
