@@ -57,10 +57,10 @@ impl TryFrom<i32> for VerifiedBootState {
 /// Field order is fixed, to match the CBOR type definition of `RootOfTrust` in `IKeyMintDevice`.
 #[derive(Clone, Debug, AsCborValue, PartialEq, Eq)]
 pub struct BootInfo {
-    pub verified_boot_key: [u8; 32],
+    pub verified_boot_key: Vec<u8>,
     pub device_boot_locked: bool,
     pub verified_boot_state: VerifiedBootState,
-    pub verified_boot_hash: [u8; 32],
+    pub verified_boot_hash: Vec<u8>,
     pub boot_patchlevel: u32, // YYYYMMDD format
 }
 

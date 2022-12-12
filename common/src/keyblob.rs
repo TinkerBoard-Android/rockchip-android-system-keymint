@@ -223,10 +223,10 @@ impl<'a> SlotHolder<'a> {
 /// Root of trust information for binding into keyblobs.
 #[derive(Debug, Clone, AsCborValue)]
 pub struct RootOfTrustInfo {
-    pub verified_boot_key: [u8; 32],
+    pub verified_boot_key: Vec<u8>,
     pub device_boot_locked: bool,
     pub verified_boot_state: VerifiedBootState,
-    pub verified_boot_hash: [u8; 32],
+    pub verified_boot_hash: Vec<u8>,
 }
 
 /// Derive a key encryption key used for key blob encryption. The key is an AES-256 key derived
