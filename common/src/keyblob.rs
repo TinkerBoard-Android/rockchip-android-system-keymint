@@ -13,7 +13,7 @@ use kmr_wire::keymint::{
     BootInfo, KeyCharacteristics, KeyParam, KeyPurpose, SecurityLevel, VerifiedBootState,
 };
 use kmr_wire::{cbor, cbor_type_error, AsCborValue, CborError};
-use log::error;
+use log::{error, info};
 use zeroize::ZeroizeOnDrop;
 
 pub mod legacy;
@@ -118,17 +118,41 @@ pub struct EncryptedKeyBlobV1 {
 /// Trait to handle keyblobs in a format from a previous implementation.
 pub trait LegacyKeyHandler {
     /// Indicate whether a keyblob is a legacy key format.
-    fn is_legacy_key(&self, keyblob: &[u8], params: &[KeyParam], root_of_trust: &BootInfo) -> bool;
+    fn is_legacy_key(&self, keyblob: &[u8], params: &[KeyParam], root_of_trust: &BootInfo) -> bool {
+        // The `convert_legacy_key` method includes a security level parameter so that a new
+        // keyblob can be emitted with the key characterstics assigned appropriately.  However,
+        // for this method the new keyblob is thrown away, so just use `TrustedEnvironment`.
+        match self.convert_legacy_key(
+            keyblob,
+            params,
+            root_of_trust,
+            SecurityLevel::TrustedEnvironment,
+        ) {
+            Ok(_blob) => {
+                // Successfully converted the keyblob into current format, so assume that means
+                // that the keyblob was indeed in the legacy format.
+                true
+            }
+            Err(e) => {
+                info!("legacy keyblob conversion attempt failed: {:?}", e);
+                false
+            }
+        }
+    }
 
-    /// Convert a legacy key (for which [`is_legacy_key`] returned true) into current format.
-    /// This method should destroy any secure deletion data associated with the key.
+    /// Convert a potentially-legacy key into current format.  Note that any secure deletion data
+    /// associated with the old keyblob should not be deleted until a subsequent call to
+    /// `delete_legacy_key` arrives.
     fn convert_legacy_key(
-        &mut self,
+        &self,
         keyblob: &[u8],
         params: &[KeyParam],
         root_of_trust: &BootInfo,
         sec_level: SecurityLevel,
     ) -> Result<PlaintextKeyBlob, Error>;
+
+    /// Delete a potentially-legacy keyblob.
+    fn delete_legacy_key(&mut self, keyblob: &[u8]) -> Result<(), Error>;
 }
 
 /// Secret data that can be mixed into the key derivation inputs for keys; if the secret data is
