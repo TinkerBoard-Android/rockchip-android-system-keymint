@@ -66,8 +66,14 @@ pub enum Error {
     InvalidEnumValue(u32),
 }
 
+/// Identification of Trusty messages.
+pub trait TrustyMessageId {
+    type Code;
+    fn code(&self) -> Self::Code;
+}
+
 /// Trait for deserialization of Trusty messages.
-trait TrustyDeserialize: Sized {
+trait TrustyDeserialize: TrustyMessageId + Sized {
     fn from_code_and_data(cmd: u32, data: &[u8]) -> Result<Self, Error>;
 }
 
@@ -92,9 +98,7 @@ pub fn deserialize_trusty_secure_req(data: &[u8]) -> Result<TrustyPerformSecureO
 }
 
 /// Trait to allow serialization of Trusty messages.
-trait TrustySerialize {
-    type Code;
-    fn code(&self) -> Self::Code;
+trait TrustySerialize: TrustyMessageId {
     fn raw_code(&self) -> u32;
     fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error>;
 }
@@ -310,6 +314,14 @@ macro_rules! declare_req_rsp_enums {
         pub enum $rspenum {
             $( $cname($rsptyp), )*
         }
+        impl TrustyMessageId for $reqenum {
+            type Code = $cenum;
+            fn code(&self) -> $cenum {
+                match self {
+                    $( Self::$cname(_) => $cenum::$cname, )*
+                }
+            }
+        }
         impl TrustyDeserialize  for $reqenum {
             fn from_code_and_data(cmd: u32, data: &[u8]) -> Result<Self, Error> {
                 let (req, rest) = match cmd {
@@ -327,13 +339,15 @@ macro_rules! declare_req_rsp_enums {
                 Ok(req)
             }
         }
-        impl TrustySerialize for $rspenum {
+        impl TrustyMessageId for $rspenum {
             type Code = $cenum;
             fn code(&self) -> $cenum {
                 match self {
                     $( Self::$cname(_) => $cenum::$cname, )*
                 }
             }
+        }
+        impl TrustySerialize for $rspenum {
             fn raw_code(&self) -> u32 {
                 self.code() as u32
             }
