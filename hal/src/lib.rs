@@ -11,7 +11,8 @@
 
 use core::{convert::TryInto, fmt::Debug};
 use kmr_wire::{
-    cbor, cbor_type_error, keymint::ErrorCode, AsCborValue, CborError, Code, KeyMintOperation,
+    cbor, cbor_type_error, keymint::ErrorCode, keymint::NEXT_MESSAGE_SIGNAL_TRUE, AsCborValue,
+    CborError, Code, KeyMintOperation,
 };
 use log::{error, info};
 use std::{
@@ -41,11 +42,32 @@ pub fn failed_cbor(err: CborError) -> binder::Status {
     )
 }
 
-/// Abstraction of a channel to a secure world TA implementation, which accepts serialized request
-/// messages and returns serialized return values (or an error if communication via the channel is
-/// lost).
+/// Abstraction of a channel to a secure world TA implementation.
 pub trait SerializedChannel: Debug + Send {
+    /// Maximum supported size for the channel in bytes.
+    const MAX_SIZE: usize;
+
+    /// Accepts serialized request messages and returns serialized return values
+    /// (or an error if communication via the channel is lost).
     fn execute(&mut self, serialized_req: &[u8]) -> binder::Result<Vec<u8>>;
+}
+
+/// A helper method to be used in the [`execute`] method above, in order to handle
+/// responses received from the TA, especially those which are larger than the capacity of the
+/// channel between the HAL and the TA.
+/// This inspects the message, checks the first byte to see if the response arrives in multiple
+/// messages. A boolean indicating whether or not to wait for the next message and the
+/// response content (with the first byte stripped off) are returned to
+/// the HAL service . Implementation of this method must be in sync with its counterpart
+/// in the `kmr-ta` crate.
+pub fn extract_rsp(rsp: &[u8]) -> binder::Result<(bool, &[u8])> {
+    if rsp.len() < 2 {
+        return Err(binder::Status::new_exception(
+            binder::ExceptionCode::ILLEGAL_ARGUMENT,
+            Some(&CString::new("message is too small to extract the response data").unwrap()),
+        ));
+    }
+    Ok((rsp[0] == NEXT_MESSAGE_SIGNAL_TRUE, &rsp[1..]))
 }
 
 /// Write a message to a stream-oriented [`Write`] item, with length framing.
@@ -104,6 +126,8 @@ pub struct MessageChannel<R: Read, W: Write> {
 }
 
 impl<R: Read + Debug + Send, W: Write + Debug + Send> SerializedChannel for MessageChannel<R, W> {
+    const MAX_SIZE: usize = 4096;
+
     fn execute(&mut self, serialized_req: &[u8]) -> binder::Result<Vec<u8>> {
         write_msg(&mut self.w, serialized_req)?;
         read_msg(&mut self.r)
@@ -137,12 +161,12 @@ where
         )
     })?;
 
-    if req_data.len() > kmr_wire::MAX_SIZE {
+    if req_data.len() > T::MAX_SIZE {
         error!(
             "HAL operation {:?} encodes bigger {} than max size {}",
             <R>::CODE,
             req_data.len(),
-            kmr_wire::MAX_SIZE
+            T::MAX_SIZE
         );
         return Err(binder::Status::new_service_specific_error(
             ErrorCode::InvalidInputLength as i32,

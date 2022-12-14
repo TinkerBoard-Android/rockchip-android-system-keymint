@@ -24,8 +24,8 @@ pub struct KeySizeInBits(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, AsCborValue)]
 pub struct RsaExponent(pub u64);
 
-/// Maximum supported size for CBOR-serialized messages.
-pub const MAX_SIZE: usize = 4096;
+/// Default maximum supported size for CBOR-serialized messages.
+pub const DEFAULT_MAX_SIZE: usize = 4096;
 
 /// Marker type indicating failure to convert into an `enum` variant.
 #[derive(Debug)]

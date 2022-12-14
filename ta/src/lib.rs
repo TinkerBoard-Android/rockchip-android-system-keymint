@@ -21,7 +21,8 @@ use kmr_wire::{
     coset::TaggedCborSerializable,
     keymint::{
         Digest, ErrorCode, HardwareAuthToken, KeyCharacteristics, KeyMintHardwareInfo, KeyOrigin,
-        KeyParam, SecurityLevel, VerifiedBootState,
+        KeyParam, SecurityLevel, VerifiedBootState, NEXT_MESSAGE_SIGNAL_FALSE,
+        NEXT_MESSAGE_SIGNAL_TRUE,
     },
     rpc,
     rpc::{EekCurve, IRPC_V2, IRPC_V3},
@@ -140,6 +141,43 @@ pub struct KeyMintTa<'a> {
 
     /// Operation handle of the (single) in-flight operation that requires trusted user presence.
     presence_required_op: Option<OpHandle>,
+}
+
+/// A helper method that can be used by the TA for processing the responses to be sent to the
+/// HAL service. Splits large response messages into multiple parts based on the capacity of the
+/// channel from the TA to the HAL. One element in the returned response array consists of:
+/// <next_msg_signal + response data> where next_msg_signal is a byte whose value is 1 if there are
+/// more messages in the response array following this one. This signal should be used by the HAL
+/// side to decide whether or not to wait for more messages. Implementation of this method must be
+/// in sync with its counterpart in the `kmr-hal` crate.
+pub fn split_rsp(mut rsp_data: &[u8], max_size: usize) -> Result<Vec<Vec<u8>>, Error> {
+    if rsp_data.is_empty() || max_size < 2 {
+        return Err(km_err!(
+            InvalidArgument,
+            "response data is empty or max size: {} is invalid",
+            max_size
+        ));
+    }
+    // Need to allocate one byte for the more_msg_signal.
+    let allowed_msg_length = max_size - 1;
+    let mut num_of_splits = rsp_data.len() / allowed_msg_length;
+    if rsp_data.len() % allowed_msg_length > 0 {
+        num_of_splits += 1;
+    }
+    let mut split_rsp = vec_try_with_capacity!(num_of_splits)?;
+    while rsp_data.len() > allowed_msg_length {
+        let mut rsp = vec_try_with_capacity!(allowed_msg_length + 1)?;
+        rsp.push(NEXT_MESSAGE_SIGNAL_TRUE);
+        rsp.extend_from_slice(&rsp_data[..allowed_msg_length]);
+        debug!("Current response size with signalling byte: {}", rsp.len());
+        split_rsp.push(rsp);
+        rsp_data = &rsp_data[allowed_msg_length..];
+    }
+    let mut last_rsp = vec_try_with_capacity!(rsp_data.len() + 1)?;
+    last_rsp.push(NEXT_MESSAGE_SIGNAL_FALSE);
+    last_rsp.extend_from_slice(rsp_data);
+    split_rsp.push(last_rsp);
+    Ok(split_rsp)
 }
 
 /// Device lock state
