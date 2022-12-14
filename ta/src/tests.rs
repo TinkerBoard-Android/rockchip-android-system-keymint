@@ -1,10 +1,14 @@
 //! Tests
 
-use crate::{error_rsp, invalid_cbor_rsp_data, keys::SecureKeyWrapper};
-use alloc::vec::Vec;
+use crate::{error_rsp, invalid_cbor_rsp_data, keys::SecureKeyWrapper, split_rsp};
+use alloc::{vec, vec::Vec};
 use der::{Decode, Encode};
+use kmr_common::Error;
 use kmr_wire::{
-    keymint::{ErrorCode, KeyFormat, KeyParam, KeyPurpose},
+    keymint::{
+        ErrorCode, KeyFormat, KeyParam, KeyPurpose, NEXT_MESSAGE_SIGNAL_FALSE,
+        NEXT_MESSAGE_SIGNAL_TRUE,
+    },
     AsCborValue,
 };
 
@@ -193,4 +197,135 @@ fn test_key_description_encode_decode() {
     let key_description = secure_key_wrapper.key_description;
     let encoded_key_description_got = key_description.to_vec().unwrap();
     assert_eq!(hex::encode(&encoded_key_description_got), encoded_key_description_want);
+}
+
+#[test]
+fn test_split_rsp_invalid_input() {
+    // Check for invalid inputs
+    let mut rsp = vec![];
+    let result = split_rsp(&rsp, 5);
+    assert!(result.is_err());
+    assert!(matches!(result, Err(Error::Hal(ErrorCode::InvalidArgument, _))));
+
+    let mut rsp = vec![0x82, 0x21, 0x80];
+    let result = split_rsp(&rsp, 1);
+    assert!(matches!(result, Err(Error::Hal(ErrorCode::InvalidArgument, _))));
+}
+
+#[test]
+fn test_split_rsp_smaller_input() {
+    // Test for rsp_data size < max_size
+    let mut rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80];
+    let result = split_rsp(&rsp, 20).expect("result should not be error");
+    assert_eq!(result.len(), 1);
+    let inner_msg = result.get(0).expect("single message is expected").as_slice();
+    assert_eq!(inner_msg.len(), 6);
+    let marker = inner_msg[0];
+    assert_eq!(marker, NEXT_MESSAGE_SIGNAL_FALSE);
+    let msg = &inner_msg[1..];
+    assert_eq!(msg, rsp);
+}
+
+#[test]
+fn test_split_rsp_allowed_size_input() {
+    // Test for rsp_data size = allowed message length
+    let mut rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80];
+    let result = split_rsp(&rsp, 6).expect("result should not be error");
+    assert_eq!(result.len(), 1);
+    let inner_msg = result.get(0).expect("single message is expected").as_slice();
+    assert_eq!(inner_msg.len(), 6);
+    let marker = inner_msg[0];
+    assert_eq!(marker, NEXT_MESSAGE_SIGNAL_FALSE);
+    let msg = &inner_msg[1..];
+    assert_eq!(msg, rsp);
+}
+
+#[test]
+fn test_split_rsp_max_size_input() {
+    // Test for rsp_data size = max_size
+    let mut rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80, 0x82];
+    let result = split_rsp(&rsp, 6).expect("result should not be error");
+    assert_eq!(result.len(), 2);
+
+    let inner_msg1 = result.get(0).expect("a message is expected at index 0").as_slice();
+    assert_eq!(inner_msg1.len(), 6);
+    let marker1 = inner_msg1[0];
+    assert_eq!(marker1, NEXT_MESSAGE_SIGNAL_TRUE);
+    assert_eq!(&inner_msg1[1..], &rsp[..5]);
+
+    let inner_msg2 = result.get(1).expect("a message is expected at index 1").as_slice();
+    assert_eq!(inner_msg2.len(), 2);
+    let marker2 = inner_msg2[0];
+    assert_eq!(marker2, NEXT_MESSAGE_SIGNAL_FALSE);
+    assert_eq!(&inner_msg2[1..], &rsp[5..]);
+}
+
+#[test]
+fn test_split_rsp_larger_input_perfect_split() {
+    // Test for rsp_data size > max_size and it is a perfect split
+    let rsp1 = vec![0x82, 0x13, 0x82, 0x80, 0x80];
+    let rsp2 = vec![0x82, 0x14, 0x82, 0x80, 0x80];
+    let rsp3 = vec![0x82, 0x15, 0x82, 0x80, 0x80];
+    let mut rsp = vec![];
+    rsp.extend_from_slice(&rsp1);
+    rsp.extend_from_slice(&rsp2);
+    rsp.extend_from_slice(&rsp3);
+    let result = split_rsp(&rsp, 6).expect("result should not be error");
+    assert_eq!(result.len(), 3);
+
+    let inner_msg1 = result.get(0).expect("a message is expected at index 0").as_slice();
+    assert_eq!(inner_msg1.len(), 6);
+    let marker1 = inner_msg1[0];
+    assert_eq!(marker1, NEXT_MESSAGE_SIGNAL_TRUE);
+    let msg1 = &inner_msg1[1..];
+    assert_eq!(msg1, rsp1);
+
+    let inner_msg2 = result.get(1).expect("a message is expected at index 1").as_slice();
+    assert_eq!(inner_msg2.len(), 6);
+    let marker2 = inner_msg2[0];
+    assert_eq!(marker2, NEXT_MESSAGE_SIGNAL_TRUE);
+    let msg2 = &inner_msg2[1..];
+    assert_eq!(msg2, rsp2);
+
+    let inner_msg3 = result.get(2).expect("a message is expected at index 2").as_slice();
+    assert_eq!(inner_msg3.len(), 6);
+    let marker3 = inner_msg3[0];
+    assert_eq!(marker3, NEXT_MESSAGE_SIGNAL_FALSE);
+    let msg3 = &inner_msg3[1..];
+    assert_eq!(msg3, rsp3);
+}
+
+#[test]
+fn test_split_rsp_larger_input_imperfect_split() {
+    // Test for rsp_data size > max_size and it is not a perfect split
+    let rsp1 = vec![0x82, 0x00, 0x81, 0x82, 0x13];
+    let rsp2 = vec![0x81, 0x83, 0x41, 0x01, 0x80];
+    let rsp3 = vec![0x80];
+    let mut rsp = vec![];
+    rsp.extend_from_slice(&rsp1);
+    rsp.extend_from_slice(&rsp2);
+    rsp.extend_from_slice(&rsp3);
+    let result = split_rsp(&rsp, 6).expect("result should not be error");
+    assert_eq!(result.len(), 3);
+
+    let inner_msg1 = result.get(0).expect("a message is expected at index 0").as_slice();
+    assert_eq!(inner_msg1.len(), 6);
+    let marker1 = inner_msg1[0];
+    assert_eq!(marker1, NEXT_MESSAGE_SIGNAL_TRUE);
+    let msg1 = &inner_msg1[1..];
+    assert_eq!(msg1, rsp1);
+
+    let inner_msg2 = result.get(1).expect("a message is expected at index 1").as_slice();
+    assert_eq!(inner_msg2.len(), 6);
+    let marker2 = inner_msg2[0];
+    assert_eq!(marker2, NEXT_MESSAGE_SIGNAL_TRUE);
+    let msg2 = &inner_msg2[1..];
+    assert_eq!(msg2, rsp2);
+
+    let inner_msg3 = result.get(2).expect("a message is expected at index 2").as_slice();
+    assert_eq!(inner_msg3.len(), 2);
+    let marker3 = inner_msg3[0];
+    assert_eq!(marker3, NEXT_MESSAGE_SIGNAL_FALSE);
+    let msg3 = &inner_msg3[1..];
+    assert_eq!(msg3, rsp3);
 }

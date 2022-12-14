@@ -13,7 +13,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 
-/// Maximum size of input data in operation messages, allowing for overhead.
+/// Maximum overhead size from CBOR serialization of operation messages.
 ///
 /// A serialized `FinishRequest` includes the following additional bytes over and
 /// above the size of the input (at most):
@@ -46,7 +46,7 @@ use std::{
 ///      - 32: bstr [confirmation token (HMAC-SHA256)]
 ///
 /// Add some leeway in case encodings change.
-pub const MAX_DATA_SIZE: usize = MAX_SIZE - 350;
+pub const MAX_CBOR_OVERHEAD: usize = 350;
 
 /// IKeyMintDevice implementation which converts all method invocations to serialized
 /// requests that are sent down the associated channel.
@@ -316,6 +316,9 @@ impl<T: SerializedChannel + 'static> Operation<T> {
 }
 
 impl<T: SerializedChannel> Operation<T> {
+    // Maximum size allowed for the operation data.
+    const MAX_DATA_SIZE: usize = T::MAX_SIZE - MAX_CBOR_OVERHEAD;
+
     /// Invalidate the operation.
     fn invalidate(&self) {
         *self.op_handle.write().unwrap() = None;
@@ -356,7 +359,7 @@ impl<T: SerializedChannel + 'static> keymint::IKeyMintOperation::IKeyMintOperati
         };
         while !input.is_empty() {
             let mut req = req_template.clone();
-            let batch_len = core::cmp::min(MAX_DATA_SIZE, input.len());
+            let batch_len = core::cmp::min(Self::MAX_DATA_SIZE, input.len());
             req.input = input[..batch_len].to_vec();
             input = &input[batch_len..];
             let _rsp: UpdateAadResponse = self.execute(req).map_err(|e| {
@@ -385,7 +388,7 @@ impl<T: SerializedChannel + 'static> keymint::IKeyMintOperation::IKeyMintOperati
         let mut output = vec![];
         while !input.is_empty() {
             let mut req = req_template.clone();
-            let batch_len = core::cmp::min(MAX_DATA_SIZE, input.len());
+            let batch_len = core::cmp::min(Self::MAX_DATA_SIZE, input.len());
             req.input = input[..batch_len].to_vec();
             input = &input[batch_len..];
             let rsp: UpdateResponse = self.execute(req).map_err(|e| {
@@ -414,6 +417,7 @@ impl<T: SerializedChannel + 'static> keymint::IKeyMintOperation::IKeyMintOperati
 
         let mut output = vec![];
         let result: binder::Result<FinishResponse> = if let Some(mut input) = input {
+            let MAX_DATA_SIZE = Self::MAX_DATA_SIZE;
             while input.len() > MAX_DATA_SIZE {
                 let req = UpdateRequest {
                     op_handle,
