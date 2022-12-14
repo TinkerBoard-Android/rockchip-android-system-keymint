@@ -498,6 +498,12 @@ impl<'a> KeyMintTa<'a> {
         Ok(())
     }
 
+    /// Check if HAL-derived information has been set. This is used as an
+    /// indication that we are past the boot stage.
+    pub fn is_hal_info_set(&self) -> bool {
+        self.hal_info.is_some()
+    }
+
     /// Configure the HAL-derived information, learnt from the userspace
     /// operating system.
     pub fn set_hal_info(&mut self, hal_info: HalInfo) {
