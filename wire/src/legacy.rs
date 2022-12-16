@@ -40,7 +40,10 @@
 //! - Other TAs (e.g. Gatekeeper, ConfirmationUI) running in the secure environment.
 //! - Provisioning tools.
 
-use crate::keymint::{Algorithm, VerifiedBootState};
+use crate::{
+    keymint::{Algorithm, ErrorCode, VerifiedBootState},
+    try_from_n,
+};
 use alloc::vec::Vec;
 use enumn::N;
 use kmr_derive::LegacySerialize;
@@ -54,6 +57,40 @@ pub const TRUSTY_STOP_BITMASK: u32 = 0x02;
 /// The raw `u32` command value should be shifted right by this number of bits to get the command
 /// enum value.
 pub const TRUSTY_CMD_SHIFT: usize = 2;
+
+/// Key{Mint,master} version identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, N)]
+#[repr(i32)]
+pub enum KmVersion {
+    Keymaster1 = 10,
+    Keymaster11 = 11,
+    Keymaster2 = 20,
+    Keymaster3 = 30,
+    Keymaster4 = 40,
+    Keymaster41 = 41,
+    KeyMint1 = 100,
+    KeyMint2 = 200,
+    KeyMint3 = 300,
+}
+try_from_n!(KmVersion);
+
+impl KmVersion {
+    /// Indicate the message format version associated with a C++ KeyMint version.
+    pub fn message_version(&self) -> u32 {
+        match self {
+            KmVersion::Keymaster1 => 1,
+            KmVersion::Keymaster11 => 2,
+            KmVersion::Keymaster2
+            | KmVersion::Keymaster3
+            | KmVersion::Keymaster4
+            | KmVersion::Keymaster41 => 3,
+            KmVersion::KeyMint1 | KmVersion::KeyMint2 | KmVersion::KeyMint3 => 4,
+        }
+    }
+}
+
+/// Date marker used by the last version of the previous C++ code.
+pub const KM_DATE: u32 = 20201219;
 
 /// Errors encountered when [de-]serializing legacy messages.
 #[derive(Debug, Clone, Copy)]
@@ -98,31 +135,82 @@ pub fn deserialize_trusty_secure_req(data: &[u8]) -> Result<TrustyPerformSecureO
 }
 
 /// Trait to allow serialization of Trusty messages.
-trait TrustySerialize: TrustyMessageId {
+pub trait TrustySerialize: TrustyMessageId {
     fn raw_code(&self) -> u32;
     fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error>;
 }
 
-fn serialize_trusty_response_message<T: TrustySerialize>(rsp: &T) -> Result<Vec<u8>, Error> {
-    let cmd = rsp.raw_code();
+/// The result of a legacy operation is either a response message or an error code associated with
+/// the original command.
+pub enum LegacyResult<T> {
+    Ok(T),
+    Err { cmd: u32, code: ErrorCode },
+}
+
+impl<T: TrustySerialize> LegacyResult<T> {
+    /// Return the command code associated with the result.
+    fn cmd(&self) -> u32 {
+        match self {
+            LegacyResult::Ok(rsp) => rsp.raw_code(),
+            LegacyResult::Err { cmd, code: _code } => *cmd,
+        }
+    }
+}
+
+fn serialize_trusty_response_message<T: TrustySerialize>(
+    result: LegacyResult<T>,
+) -> Result<Vec<u8>, Error> {
+    let cmd = result.cmd();
     // None of the supported response messages are large enough to require fragmentation, so always
     // mark this as the final response.
     let raw_cmd = cmd << TRUSTY_CMD_SHIFT | TRUSTY_RESPONSE_BITMASK | TRUSTY_STOP_BITMASK;
     let mut buf = Vec::new();
-    buf.try_reserve(4).map_err(|_e| Error::AllocationFailed)?;
-    buf.extend_from_slice(&raw_cmd.to_le_bytes());
-    rsp.serialize_into(&mut buf)?;
+    buf.try_reserve(4 + 4).map_err(|_e| Error::AllocationFailed)?;
+    buf.extend_from_slice(&raw_cmd.to_ne_bytes());
+
+    match result {
+        LegacyResult::Ok(rsp) => {
+            buf.extend_from_slice(&(ErrorCode::Ok as u32).to_ne_bytes());
+            rsp.serialize_into(&mut buf)?;
+        }
+        LegacyResult::Err { cmd: _cmd, code } => {
+            buf.extend_from_slice(&(code as u32).to_ne_bytes());
+        }
+    }
+
     Ok(buf)
 }
 
 /// Serialize a legacy Trusty response message for the non-secure port.
-pub fn serialize_trusty_rsp(rsp: &TrustyPerformOpRsp) -> Result<Vec<u8>, Error> {
-    serialize_trusty_response_message(rsp)
+pub fn serialize_trusty_rsp(rsp: TrustyPerformOpRsp) -> Result<Vec<u8>, Error> {
+    serialize_trusty_response_message(LegacyResult::Ok(rsp))
 }
 
 /// Serialize a legacy Trusty response message for the secure port.
-pub fn serialize_trusty_secure_rsp(rsp: &TrustyPerformSecureOpRsp) -> Result<Vec<u8>, Error> {
-    serialize_trusty_response_message(rsp)
+pub fn serialize_trusty_secure_rsp(rsp: TrustyPerformSecureOpRsp) -> Result<Vec<u8>, Error> {
+    serialize_trusty_response_message(LegacyResult::Ok(rsp))
+}
+
+/// Serialize a legacy Trusty error response for the non-secure port.
+pub fn serialize_trusty_error_rsp(
+    op: TrustyKeymasterOperation,
+    rc: ErrorCode,
+) -> Result<Vec<u8>, Error> {
+    serialize_trusty_response_message(LegacyResult::<TrustyPerformOpRsp>::Err {
+        cmd: op as u32,
+        code: rc,
+    })
+}
+
+/// Serialize a legacy Trusty error response for the secure port.
+pub fn serialize_trusty_secure_error_rsp(
+    op: TrustyKeymasterSecureOperation,
+    rc: ErrorCode,
+) -> Result<Vec<u8>, Error> {
+    serialize_trusty_response_message(LegacyResult::<TrustyPerformSecureOpRsp>::Err {
+        cmd: op as u32,
+        code: rc,
+    })
 }
 
 /// Trait that serializes an inner message to/from the format used by the legacy C++ Keymaster code.
@@ -141,7 +229,21 @@ impl InnerSerialize for u32 {
     }
     fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error> {
         buf.try_reserve(4).map_err(|_e| Error::AllocationFailed)?;
-        buf.extend_from_slice(&self.to_le_bytes());
+        buf.extend_from_slice(&self.to_ne_bytes());
+        Ok(())
+    }
+}
+
+impl InnerSerialize for u8 {
+    fn deserialize(data: &[u8]) -> Result<(Self, &[u8]), Error> {
+        if data.is_empty() {
+            return Err(Error::DataTruncated);
+        }
+        Ok((data[0], &data[1..]))
+    }
+    fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error> {
+        buf.try_reserve(1).map_err(|_e| Error::AllocationFailed)?;
+        buf.push(*self);
         Ok(())
     }
 }
@@ -171,9 +273,19 @@ impl InnerSerialize for Vec<u8> {
     fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error> {
         buf.try_reserve(4 + self.len()).map_err(|_e| Error::AllocationFailed)?;
         let len = self.len() as u32;
-        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&len.to_ne_bytes());
         buf.extend_from_slice(self);
         Ok(())
+    }
+}
+
+impl InnerSerialize for KmVersion {
+    fn deserialize(data: &[u8]) -> Result<(Self, &[u8]), Error> {
+        let (v, rest) = <u32>::deserialize(data)?;
+        Ok((Self::try_from(v as i32).map_err(|_e| Error::InvalidEnumValue(v))?, rest))
+    }
+    fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error> {
+        (*self as u32).serialize_into(buf)
     }
 }
 
@@ -199,20 +311,40 @@ impl InnerSerialize for VerifiedBootState {
 
 // Legacy messages of interest from `android_keymaster_messages.h`.
 
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
+pub struct GetVersionRequest {}
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
+pub struct GetVersionResponse {
+    pub major_ver: u8,
+    pub minor_ver: u8,
+    pub subminor_ver: u8,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
+pub struct GetVersion2Request {
+    pub max_message_version: u32,
+}
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
+pub struct GetVersion2Response {
+    pub max_message_version: u32,
+    pub km_version: KmVersion,
+    pub km_date: u32,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct ConfigureBootPatchlevelRequest {
     pub boot_patchlevel: u32, // YYYMMDD
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct ConfigureBootPatchlevelResponse {}
 
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct ConfigureVerifiedBootInfoRequest {
     pub boot_state: Vec<u8>,
     pub bootloader_state: Vec<u8>,
     pub vbmeta_digest: Vec<u8>,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct ConfigureVerifiedBootInfoResponse {}
 
 #[derive(Clone, PartialEq, Eq, LegacySerialize, ZeroizeOnDrop)]
@@ -226,12 +358,12 @@ pub struct SetAttestationIdsRequest {
     pub manufacturer: Vec<u8>,
     pub model: Vec<u8>,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct SetAttestationIdsResponse {}
 
 // Legacy messages of interest from `trusty_keymaster_messages.h`.
 
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct GetAuthTokenKeyRequest {}
 #[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct GetAuthTokenKeyResponse {
@@ -252,7 +384,7 @@ impl InnerSerialize for GetAuthTokenKeyResponse {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct SetBootParamsRequest {
     pub os_version: u32,
     pub os_patchlevel: u32, // YYYYMM
@@ -261,7 +393,7 @@ pub struct SetBootParamsRequest {
     pub verified_boot_key: Vec<u8>,
     pub verified_boot_hash: Vec<u8>,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct SetBootParamsResponse {}
 
 #[derive(Clone, PartialEq, Eq, LegacySerialize, ZeroizeOnDrop)]
@@ -270,22 +402,22 @@ pub struct SetAttestationKeyRequest {
     pub algorithm: Algorithm,
     pub key_data: Vec<u8>,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct SetAttestationKeyResponse {}
 
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct AppendAttestationCertChainRequest {
     pub algorithm: Algorithm,
     pub cert_data: Vec<u8>,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct AppendAttestationCertChainResponse {}
 
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct ClearAttestationCertChainRequest {
     pub algorithm: Algorithm,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct ClearAttestationCertChainResponse {}
 
 #[derive(Clone, PartialEq, Eq, LegacySerialize, ZeroizeOnDrop)]
@@ -294,7 +426,7 @@ pub struct SetWrappedAttestationKeyRequest {
     pub algorithm: Algorithm,
     pub key_data: Vec<u8>,
 }
-#[derive(Clone, PartialEq, Eq, LegacySerialize)]
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct SetWrappedAttestationKeyResponse {}
 
 macro_rules! declare_req_rsp_enums {
@@ -372,13 +504,15 @@ declare_req_rsp_enums! { CuttlefishKeymasterOperation => (CuttlefishPerformOpReq
 
 // Possible legacy Trusty Keymaster operation requests for the non-secure port.
 declare_req_rsp_enums! { TrustyKeymasterOperation => (TrustyPerformOpReq, TrustyPerformOpRsp) {
+    GetVersion = 7 =>                                (GetVersionRequest, GetVersionResponse),
+    GetVersion2 = 28 =>                              (GetVersion2Request, GetVersion2Response),
     SetBootParams = 0x1000 =>                        (SetBootParamsRequest, SetBootParamsResponse),
     SetAttestationKey = 0x2000 =>                    (SetAttestationKeyRequest, SetAttestationKeyResponse),
     AppendAttestationCertChain = 0x3000 =>           (AppendAttestationCertChainRequest, AppendAttestationCertChainResponse),
     ClearAttestationCertChain = 0xa000 =>            (ClearAttestationCertChainRequest, ClearAttestationCertChainResponse),
     SetWrappedAttestationKey = 0xb000 =>             (SetWrappedAttestationKeyRequest, SetWrappedAttestationKeyResponse),
     SetAttestationIds = 0xc000 =>                    (SetAttestationIdsRequest, SetAttestationIdsResponse),
-    ConfigureBootPatchlevel = 0xd000 =>              (ConfigureBootPatchlevelRequest, ConfigureBootPatchlevelResponse),
+    ConfigureBootPatchlevel = 0xd0000 =>             (ConfigureBootPatchlevelRequest, ConfigureBootPatchlevelResponse),
 } }
 
 // Possible legacy Trusty Keymaster operation requests for the secure port.
@@ -470,7 +604,19 @@ mod tests {
         assert!(rest.is_empty());
         assert!(got == msg);
     }
+    #[test]
+    fn test_get_version_serialize() {
+        let msg = GetVersionResponse { major_ver: 1, minor_ver: 2, subminor_ver: 3 };
+        let data = vec![1, 2, 3];
 
+        let mut got_data = Vec::new();
+        msg.serialize_into(&mut got_data).unwrap();
+        assert_eq!(got_data, data);
+
+        let (got, rest) = GetVersionResponse::deserialize(&data).unwrap();
+        assert!(rest.is_empty());
+        assert!(got == msg);
+    }
     #[test]
     fn test_inner_deserialize_fail() {
         let data = "010101"; // too short
@@ -485,11 +631,11 @@ mod tests {
             key_material: vec![1, 2, 3],
         });
         #[cfg(target_endian = "little")]
-        let data = concat!("03000000", "010203");
+        let data = concat!("03000000", "00000000", "010203");
         #[cfg(target_endian = "big")]
         let data = concat!("00000003", "010203");
 
-        let got_data = serialize_trusty_secure_rsp(&msg).unwrap();
+        let got_data = serialize_trusty_secure_rsp(msg).unwrap();
         assert_eq!(hex::encode(got_data), data);
     }
 }
