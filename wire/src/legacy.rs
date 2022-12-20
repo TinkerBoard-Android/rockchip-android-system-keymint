@@ -188,7 +188,20 @@ pub fn serialize_trusty_rsp(rsp: TrustyPerformOpRsp) -> Result<Vec<u8>, Error> {
 
 /// Serialize a legacy Trusty response message for the secure port.
 pub fn serialize_trusty_secure_rsp(rsp: TrustyPerformSecureOpRsp) -> Result<Vec<u8>, Error> {
-    serialize_trusty_response_message(LegacyResult::Ok(rsp))
+    match &rsp {
+        TrustyPerformSecureOpRsp::GetAuthTokenKey(GetAuthTokenKeyResponse { key_material }) => {
+            // The `KM_GET_AUTH_TOKEN_KEY` response does not include the error code value.  (The
+            // recipient has to distinguish between OK and error responses by the size of the
+            // response message: 4+32 for OK, 4+4 for error).
+            let cmd = rsp.raw_code();
+            let raw_cmd = cmd << TRUSTY_CMD_SHIFT | TRUSTY_RESPONSE_BITMASK | TRUSTY_STOP_BITMASK;
+            let mut buf = Vec::new();
+            buf.try_reserve(4 + key_material.len()).map_err(|_e| Error::AllocationFailed)?;
+            buf.extend_from_slice(&raw_cmd.to_ne_bytes());
+            buf.extend_from_slice(key_material);
+            Ok(buf)
+        }
+    }
 }
 
 /// Serialize a legacy Trusty error response for the non-secure port.
@@ -631,7 +644,7 @@ mod tests {
             key_material: vec![1, 2, 3],
         });
         #[cfg(target_endian = "little")]
-        let data = concat!("03000000", "00000000", "010203");
+        let data = concat!("03000000", "010203");
         #[cfg(target_endian = "big")]
         let data = concat!("00000003", "010203");
 
