@@ -2,14 +2,16 @@
 
 // TODO: remove after complete implementing RKP functionality.
 #![allow(dead_code)]
+use crate::coset::{iana, AsCborValue, CoseSign1Builder, HeaderBuilder};
 use alloc::{boxed::Box, vec::Vec};
-
 use kmr_common::{
     crypto, crypto::aes, crypto::KeyMaterial, crypto::OpaqueOr, crypto::RawKeyMaterial, keyblob,
-    log_unimpl, unimpl, Error,
+    log_unimpl, rpc_err, unimpl, Error,
 };
-use kmr_wire::{keymint, rpc};
+use kmr_wire::{keymint, rpc, CborError};
 use log::error;
+
+use crate::rkp::serialize_cbor;
 
 /// Context used to derive the hardware backed key for computing HMAC in
 /// IRemotelyProvisionedComponent.
@@ -162,13 +164,23 @@ pub trait BootloaderStatus {
 /// the method signatures.
 /// TODO (b/258069484): Add smoke tests to this device trait.
 pub trait RetrieveRpcArtifacts {
-    // Retrieve secret bytes (of the given output length) from a hardware backed key. For a given
-    // context, the output is deterministic.
-    fn derive_bytes_from_hbk(&self, context: &[u8], output_len: usize) -> Result<Vec<u8>, Error>;
+    // Retrieve secret bytes (of the given output length) derived from a hardware backed key.
+    // For a given context, the output is deterministic.
+    fn derive_bytes_from_hbk(
+        &self,
+        hkdf: &dyn crypto::Hkdf,
+        context: &[u8],
+        output_len: usize,
+    ) -> Result<Vec<u8>, Error>;
 
-    // Compute HMAC_SHA256 over the given input using a hardware backed key.
-    fn compute_hmac_sha256(&self, hmac: &dyn crypto::Hmac, input: &[u8]) -> Result<Vec<u8>, Error> {
-        let secret = self.derive_bytes_from_hbk(RPC_HMAC_KEY_CONTEXT, RPC_HMAC_KEY_LEN)?;
+    // Compute HMAC_SHA256 over the given input using a key derived from hardware.
+    fn compute_hmac_sha256(
+        &self,
+        hmac: &dyn crypto::Hmac,
+        hkdf: &dyn crypto::Hkdf,
+        input: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let secret = self.derive_bytes_from_hbk(hkdf, RPC_HMAC_KEY_CONTEXT, RPC_HMAC_KEY_LEN)?;
         crypto::hmac_sha256(hmac, &secret, input)
     }
 
@@ -177,13 +189,43 @@ pub trait RetrieveRpcArtifacts {
 
     // Sign the input data with the CDI leaf private key of the IRPC HAL implementation. In IRPC V2,
     // the `data` to be signed is the [`SignedMac_structure`] in ProtectedData.aidl, when signing
-    // the ephemeral MAC key used to authenticate the public keys.
+    // the ephemeral MAC key used to authenticate the public keys. In IRPC V3, the `data` to be
+    // signed is the [`SignedDataSigStruct`].
+    // If a particular implementation would like to return the signature in a COSE_Sign1 message,
+    // they can mark this unimplemented and override the default implementation in the
+    // `sign_data_in_cose_sign1` method below.
     fn sign_data<'a>(
         &self,
         ec: &dyn crypto::Ec,
         data: &[u8],
         rpc_v2: Option<RpcV2Req<'a>>,
     ) -> Result<Vec<u8>, Error>;
+
+    // Sign the payload and return a COSE_Sign1 message. In IRPC V2, the `payload` is the MAC Key.
+    // In IRPC V3, the `payload` is the `Data` that the `SignedData` is parameterized with (i.e. a
+    // CBOR array containing `challenge` and `CsrPayload`).
+    fn sign_data_in_cose_sign1<'a>(
+        &self,
+        ec: &dyn crypto::Ec,
+        signing_algorithm: &CsrSigningAlgorithm,
+        payload: &[u8],
+        _aad: &[u8],
+        rpc_v2: Option<RpcV2Req<'a>>,
+    ) -> Result<Vec<u8>, Error> {
+        let cose_sign_algorithm = match signing_algorithm {
+            CsrSigningAlgorithm::ES256 => iana::Algorithm::ES256,
+            CsrSigningAlgorithm::EdDSA => iana::Algorithm::EdDSA,
+        };
+        // Construct `SignedData`
+        let protected = HeaderBuilder::new().algorithm(cose_sign_algorithm).build();
+        let signed_data = CoseSign1Builder::new()
+            .protected(protected)
+            .payload(payload.to_vec())
+            .try_create_signature(&[], |input| self.sign_data(ec, input, None))?
+            .build();
+        let signed_data_cbor = signed_data.to_cbor_value().map_err(CborError::from)?;
+        serialize_cbor(&signed_data_cbor)
+    }
 }
 
 /// Information about the DICE chain belonging to the implementation of the IRPC HAL.
@@ -288,7 +330,12 @@ impl RetrieveCertSigningInfo for NoOpRetrieveCertSigningInfo {
 
 pub struct NoOpRetrieveRpcArtifacts;
 impl RetrieveRpcArtifacts for NoOpRetrieveRpcArtifacts {
-    fn derive_bytes_from_hbk(&self, _context: &[u8], output_len: usize) -> Result<Vec<u8>, Error> {
+    fn derive_bytes_from_hbk(
+        &self,
+        _hkdf: &dyn crypto::Hkdf,
+        _context: &[u8],
+        output_len: usize,
+    ) -> Result<Vec<u8>, Error> {
         unimpl!();
     }
 
