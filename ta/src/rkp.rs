@@ -155,7 +155,7 @@ impl<'a> KeyMintTa<'a> {
                 if test_mode == rpc::TestMode(true) {
                     return hmac_sha256(self.imp.hmac, &[0; 32], data);
                 }
-                self.dev.rpc.compute_hmac_sha256(self.imp.hmac, data)
+                self.dev.rpc.compute_hmac_sha256(self.imp.hmac, self.imp.hkdf, data)
             })?;
 
         let key_result = self.finish_keyblob_creation(
@@ -221,7 +221,8 @@ impl<'a> KeyMintTa<'a> {
             }
 
             cose_mac0.verify_tag(&[], |expected_tag, data| -> Result<(), Error> {
-                let computed_tag = self.dev.rpc.compute_hmac_sha256(self.imp.hmac, data)?;
+                let computed_tag =
+                    self.dev.rpc.compute_hmac_sha256(self.imp.hmac, self.imp.hkdf, data)?;
                 if self.imp.compare.eq(expected_tag, &computed_tag) {
                     Ok(())
                 } else {
@@ -242,26 +243,21 @@ impl<'a> KeyMintTa<'a> {
         let signed_data_payload =
             cbor!([Value::Bytes(challenge.to_vec()), Value::Bytes(csr_payload_data)])?;
         let signed_data_payload_data = serialize_cbor(&signed_data_payload)?;
-        // Process DICE info retrieved via the device interface.
+
+        // Process DICE info.
         let dice_info =
             self.get_dice_info().ok_or_else(|| rpc_err!(Failed, "DICE info not available."))?;
-        let cose_sign_algorithm = match &dice_info.signing_algorithm {
-            CsrSigningAlgorithm::ES256 => iana::Algorithm::ES256,
-            CsrSigningAlgorithm::EdDSA => iana::Algorithm::EdDSA,
-        };
         let uds_certs = read_to_value(&dice_info.pub_dice_artifacts.uds_certs)?;
         let dice_cert_chain = read_to_value(&dice_info.pub_dice_artifacts.dice_cert_chain)?;
 
-        // Construct `SignedData`
-        let protected = HeaderBuilder::new().algorithm(cose_sign_algorithm).build();
-        let signed_data = CoseSign1Builder::new()
-            .protected(protected)
-            .payload(signed_data_payload_data)
-            .try_create_signature(&[], |input| -> Result<Vec<u8>, Error> {
-                self.dev.rpc.sign_data(self.imp.ec, input, None)
-            })?
-            .build();
-        let signed_data_cbor = signed_data.to_cbor_value().map_err(CborError::from)?;
+        // Get `SignedData`
+        let signed_data_cbor = read_to_value(&self.dev.rpc.sign_data_in_cose_sign1(
+            self.imp.ec,
+            &dice_info.signing_algorithm,
+            &signed_data_payload_data,
+            &[],
+            None,
+        )?)?;
 
         // Construct `AuthenticatedRequest<CsrPayload>`
         let authn_req = cbor!([
