@@ -647,9 +647,9 @@ impl<'a> crate::KeyMintTa<'a> {
         keyblob_to_upgrade: &[u8],
         upgrade_params: Vec<KeyParam>,
     ) -> Result<Vec<u8>, Error> {
-        let mut keyblob =
+        let (mut keyblob, mut modified) =
             match self.keyblob_parse_decrypt_backlevel(keyblob_to_upgrade, &upgrade_params) {
-                Ok(v) => v.0,
+                Ok(v) => (v.0, false),
                 Err(Error::Hal(ErrorCode::KeyRequiresUpgrade, _)) => {
                     // Because `keyblob_parse_decrypt_backlevel` explicitly allows back-level
                     // versioned keys, a `KeyRequiresUpgrade` error indicates that the keyblob looks
@@ -659,14 +659,18 @@ impl<'a> crate::KeyMintTa<'a> {
                         .legacy_key
                         .as_mut()
                         .ok_or_else(|| km_err!(UnknownError, "no legacy key handler"))?;
-                    legacy_handler.convert_legacy_key(
-                        keyblob_to_upgrade,
-                        &upgrade_params,
-                        self.boot_info
-                            .as_ref()
-                            .ok_or_else(|| km_err!(HardwareNotYetAvailable, "no boot info"))?,
-                        self.hw_info.security_level,
-                    )?
+                    (
+                        legacy_handler.convert_legacy_key(
+                            keyblob_to_upgrade,
+                            &upgrade_params,
+                            self.boot_info
+                                .as_ref()
+                                .ok_or_else(|| km_err!(HardwareNotYetAvailable, "no boot info"))?,
+                            self.hw_info.security_level,
+                        )?,
+                        // Force the emission of a new keyblob even if versions are the same.
+                        true,
+                    )
                 }
                 Err(e) => return Err(e),
             };
@@ -691,7 +695,6 @@ impl<'a> crate::KeyMintTa<'a> {
             }
         }
 
-        let mut modified = false;
         for chars in &mut keyblob.characteristics {
             if chars.security_level != self.hw_info.security_level {
                 continue;
