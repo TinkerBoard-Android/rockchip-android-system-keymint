@@ -58,6 +58,13 @@ pub const TRUSTY_STOP_BITMASK: u32 = 0x02;
 /// enum value.
 pub const TRUSTY_CMD_SHIFT: usize = 2;
 
+/// Legacy serialized trusty messages have as a first element the desired command encoded on a `u32`
+pub const CMD_SIZE: usize = 4;
+/// After the command, non-secure port responses have an error code encoded on a `u32`
+pub const ERROR_CODE_SIZE: usize = 4;
+/// Non-secure channel response headers are comprised of a CMD and an Error code
+pub const LEGACY_NON_SEC_RSP_HEADER_SIZE: usize = CMD_SIZE + ERROR_CODE_SIZE;
+
 /// Key{Mint,master} version identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, N)]
 #[repr(i32)]
@@ -165,7 +172,7 @@ fn serialize_trusty_response_message<T: TrustySerialize>(
     // mark this as the final response.
     let raw_cmd = cmd << TRUSTY_CMD_SHIFT | TRUSTY_RESPONSE_BITMASK | TRUSTY_STOP_BITMASK;
     let mut buf = Vec::new();
-    buf.try_reserve(4 + 4).map_err(|_e| Error::AllocationFailed)?;
+    buf.try_reserve(LEGACY_NON_SEC_RSP_HEADER_SIZE).map_err(|_e| Error::AllocationFailed)?;
     buf.extend_from_slice(&raw_cmd.to_ne_bytes());
 
     match result {
@@ -189,6 +196,19 @@ pub fn serialize_trusty_rsp(rsp: TrustyPerformOpRsp) -> Result<Vec<u8>, Error> {
 /// Serialize a legacy Trusty response message for the secure port.
 pub fn serialize_trusty_secure_rsp(rsp: TrustyPerformSecureOpRsp) -> Result<Vec<u8>, Error> {
     serialize_trusty_response_message(LegacyResult::Ok(rsp))
+}
+
+/// Deserialize the header of a non-secure channel Trusty response message to know if the operation
+/// succeeded. The Result is the error code of the operation, which is roughly equivalent to the
+/// legacy keymaster error. Notice that if the keymint operation was successful the return error
+/// code will be `ErrorCode::Ok`.
+pub fn deserialize_trusty_rsp_error_code(rsp: &[u8]) -> Result<ErrorCode, Error> {
+    if rsp.len() < LEGACY_NON_SEC_RSP_HEADER_SIZE {
+        return Err(Error::DataTruncated);
+    }
+
+    let (error_code, _) = u32::deserialize(&rsp[CMD_SIZE..LEGACY_NON_SEC_RSP_HEADER_SIZE])?;
+    ErrorCode::try_from(error_code as i32).map_err(|_e| Error::InvalidEnumValue(error_code))
 }
 
 /// Serialize a legacy Trusty error response for the non-secure port.
