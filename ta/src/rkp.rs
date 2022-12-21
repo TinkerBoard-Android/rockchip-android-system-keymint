@@ -42,7 +42,7 @@ const RPC_P256_KEYGEN_PARAMS: [KeyParam; 8] = [
 ];
 
 impl<'a> KeyMintTa<'a> {
-    pub(crate) fn rpc_device_info(&self) -> Result<Vec<u8>, Error> {
+    pub fn rpc_device_info(&self) -> Result<Vec<u8>, Error> {
         let info = self.rpc_device_info_cbor()?;
         serialize_cbor(&info)
     }
