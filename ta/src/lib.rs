@@ -525,7 +525,6 @@ impl<'a> KeyMintTa<'a> {
                 verified_boot_key: boot_info.verified_boot_key.clone(),
                 device_boot_locked: boot_info.device_boot_locked,
                 verified_boot_state: boot_info.verified_boot_state,
-                verified_boot_hash: boot_info.verified_boot_hash.clone(),
             };
             self.boot_info = Some(boot_info);
             self.rot_data =
