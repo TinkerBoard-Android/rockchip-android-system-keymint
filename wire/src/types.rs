@@ -344,6 +344,7 @@ pub struct AttestationIdInfo {
     pub product: Vec<u8>,
     pub serial: Vec<u8>,
     pub imei: Vec<u8>,
+    pub imei2: Vec<u8>,
     pub meid: Vec<u8>,
     pub manufacturer: Vec<u8>,
     pub model: Vec<u8>,

@@ -31,8 +31,8 @@ use x509_cert::{
     time::Time,
 };
 
-/// Version code for KeyMint v2.
-pub const KEYMINT_V2_VERSION: i32 = 200;
+/// Version code for KeyMint v3.
+pub const KEYMINT_V3_VERSION: i32 = 300;
 
 /// OID value for the Android Attestation extension.
 pub const ATTESTATION_EXTENSION_OID: ObjectIdentifier =
@@ -217,9 +217,9 @@ pub(crate) fn basic_constraints_ext_value(ca_required: bool) -> BasicConstraints
 ///
 /// ```asn1
 /// KeyDescription ::= SEQUENCE {
-///     attestationVersion         INTEGER, # Value 200
+///     attestationVersion         INTEGER, # Value 300
 ///     attestationSecurityLevel   SecurityLevel, # See below
-///     keyMintVersion             INTEGER, # Value 200
+///     keyMintVersion             INTEGER, # Value 300
 ///     keymintSecurityLevel       SecurityLevel, # See below
 ///     attestationChallenge       OCTET_STRING, # Tag::ATTESTATION_CHALLENGE from attestParams
 ///     uniqueId                   OCTET_STRING, # Empty unless key has Tag::INCLUDE_UNIQUE_ID
@@ -306,9 +306,9 @@ pub(crate) fn attestation_extension<'a>(
     let sec_level = SecurityLevel::try_from(security_level as u32)
         .map_err(|_| km_err!(UnknownError, "invalid security level {:?}", security_level))?;
     let ext = AttestationExtension {
-        attestation_version: KEYMINT_V2_VERSION,
+        attestation_version: KEYMINT_V3_VERSION,
         attestation_security_level: sec_level,
-        keymint_version: KEYMINT_V2_VERSION,
+        keymint_version: KEYMINT_V3_VERSION,
         keymint_security_level: sec_level,
         attestation_challenge: challenge,
         unique_id,
@@ -364,6 +364,7 @@ pub(crate) fn attestation_extension<'a>(
 ///     vendorPatchLevel           [718] EXPLICIT INTEGER OPTIONAL,
 ///     bootPatchLevel             [719] EXPLICIT INTEGER OPTIONAL,
 ///     deviceUniqueAttestation    [720] EXPLICIT NULL OPTIONAL,
+///     attestationIdSecondImei    [723] EXPLICIT OCTET_STRING OPTIONAL,
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -422,6 +423,11 @@ impl<'a> AuthorizationList<'a> {
             attestation_ids.map(|v| &v.serial)
         );
         check_attestation_id!(keygen_params, AttestationIdImei, attestation_ids.map(|v| &v.imei));
+        check_attestation_id!(
+            keygen_params,
+            AttestationIdSecondImei,
+            attestation_ids.map(|v| &v.imei2)
+        );
         check_attestation_id!(keygen_params, AttestationIdMeid, attestation_ids.map(|v| &v.meid));
         check_attestation_id!(
             keygen_params,
@@ -466,6 +472,7 @@ impl<'a> AuthorizationList<'a> {
                 | KeyParam::AttestationIdProduct(_)
                 | KeyParam::AttestationIdSerial(_)
                 | KeyParam::AttestationIdImei(_)
+                | KeyParam::AttestationIdSecondImei(_)
                 | KeyParam::AttestationIdMeid(_)
                 | KeyParam::AttestationIdManufacturer(_)
                 | KeyParam::AttestationIdModel(_) => {
@@ -616,7 +623,8 @@ impl<'a> der::DecodeValue<'a> for AuthorizationList<'a> {
                 AttestationIdModel,
                 VendorPatchlevel,
                 BootPatchlevel,
-                DeviceUniqueAttestation
+                DeviceUniqueAttestation,
+                AttestationIdSecondImei
             )
         );
 
@@ -809,6 +817,9 @@ fn decode_value_from_bytes(
         }
         Tag::AttestationIdImei => {
             key_param_from_asn1_octet_string!(AttestationIdImei, tlv_bytes, key_params);
+        }
+        Tag::AttestationIdSecondImei => {
+            key_param_from_asn1_octet_string!(AttestationIdSecondImei, tlv_bytes, key_params);
         }
         Tag::AttestationIdMeid => {
             key_param_from_asn1_octet_string!(AttestationIdMeid, tlv_bytes, key_params);
@@ -1043,6 +1054,7 @@ impl<'a> Sequence<'a> for AuthorizationList<'a> {
         asn1_integer!(contents, self.auths, VendorPatchlevel);
         asn1_integer!(contents, self.auths, BootPatchlevel);
         asn1_null!(contents, self.auths, DeviceUniqueAttestation);
+        asn1_octet_string!(contents, &self.keygen_params, AttestationIdSecondImei);
 
         let ref_contents: Vec<&dyn Encode> = contents.iter().map(|v| v.as_ref()).collect();
         f(&ref_contents)
@@ -1174,9 +1186,9 @@ mod tests {
     fn test_attest_ext_encode_decode() {
         let sec_level = SecurityLevel::TrustedEnvironment;
         let ext = AttestationExtension {
-            attestation_version: KEYMINT_V2_VERSION,
+            attestation_version: KEYMINT_V3_VERSION,
             attestation_security_level: sec_level,
-            keymint_version: KEYMINT_V2_VERSION,
+            keymint_version: KEYMINT_V3_VERSION,
             keymint_security_level: sec_level,
             attestation_challenge: b"abc",
             unique_id: b"xxx",
@@ -1199,11 +1211,11 @@ mod tests {
         let want = concat!(
             "3071",   // SEQUENCE
             "0202",   // INTEGER len 2
-            "00c8",   // 200
+            "012c",   // 300
             "0a01",   // ENUM len 1
             "01",     // 1 (TrustedEnvironment)
             "0202",   // INTEGER len 2
-            "00c8",   // 200
+            "012c",   // 300
             "0a01",   // ENUM len 1
             "01",     // 1 (TrustedEnvironement)
             "0403",   // BYTE STRING len 3

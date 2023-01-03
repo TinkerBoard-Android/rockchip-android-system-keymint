@@ -192,7 +192,7 @@ pub struct Info {
 /// Global "map" of tags to information about their behaviour.
 /// Encoded as an array to avoid allocation; lookup should only be slightly slower
 /// for this few entries.
-const INFO: [(Tag, Info); 59] = [
+const INFO: [(Tag, Info); 60] = [
     (
         Tag::Purpose,
         Info {
@@ -235,7 +235,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 3,
+            bit_index: 2,
         },
     ),
     (
@@ -250,7 +250,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 4,
+            bit_index: 3,
         },
     ),
     (
@@ -265,7 +265,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 5,
+            bit_index: 4,
         },
     ),
     (
@@ -280,7 +280,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 6,
+            bit_index: 5,
         },
     ),
     (
@@ -295,7 +295,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 7,
+            bit_index: 6,
         },
     ),
     (
@@ -310,7 +310,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 8,
+            bit_index: 7,
         },
     ),
     (
@@ -325,7 +325,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 9,
+            bit_index: 8,
         },
     ),
     (
@@ -340,7 +340,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 10,
+            bit_index: 9,
         },
     ),
     (
@@ -355,7 +355,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::OptionalForAttestation,
-            bit_index: 11,
+            bit_index: 10,
         },
     ),
     (
@@ -370,7 +370,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 12,
+            bit_index: 11,
         },
     ),
     (
@@ -385,7 +385,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 13,
+            bit_index: 12,
         },
     ),
     (
@@ -400,7 +400,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 14,
+            bit_index: 13,
         },
     ),
     (
@@ -415,7 +415,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 15,
+            bit_index: 14,
         },
     ),
     (
@@ -430,7 +430,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 16,
+            bit_index: 15,
         },
     ),
     (
@@ -445,7 +445,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 17,
+            bit_index: 16,
         },
     ),
     (
@@ -460,7 +460,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 18,
+            bit_index: 17,
         },
     ),
     (
@@ -475,7 +475,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 19,
+            bit_index: 18,
         },
     ),
     (
@@ -490,7 +490,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 20,
+            bit_index: 19,
         },
     ),
     (
@@ -505,7 +505,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 21,
+            bit_index: 20,
         },
     ),
     // Value must match userID or secureId in authToken param
@@ -521,7 +521,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 22,
+            bit_index: 21,
         },
     ),
     (
@@ -536,7 +536,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 23,
+            bit_index: 22,
         },
     ),
     (
@@ -551,7 +551,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 24,
+            bit_index: 23,
         },
     ),
     (
@@ -566,7 +566,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 25,
+            bit_index: 24,
         },
     ),
     (
@@ -581,7 +581,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 26,
+            bit_index: 25,
         },
     ),
     (
@@ -596,7 +596,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 27,
+            bit_index: 26,
         },
     ),
     (
@@ -611,7 +611,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 28,
+            bit_index: 27,
         },
     ),
     // Keystore enforces unlocked-by-specific user,  KeyMint unlocked-at-all (according to
@@ -628,7 +628,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 29,
+            bit_index: 28,
         },
     ),
     (
@@ -643,7 +643,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 30,
+            bit_index: 29,
         },
     ),
     (
@@ -658,7 +658,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 31,
+            bit_index: 30,
         },
     ),
     (
@@ -676,7 +676,7 @@ const INFO: [(Tag, Info); 59] = [
             // generation, then a value for `Tag::CreationDatetime` is needed for
             // the calculation of the unique ID value.
             cert_gen: CertGenParam::Special,
-            bit_index: 32,
+            bit_index: 31,
         },
     ),
     (
@@ -691,7 +691,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(true),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 33,
+            bit_index: 32,
         },
     ),
     (
@@ -709,7 +709,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 34,
+            bit_index: 33,
         },
     ),
     (
@@ -724,7 +724,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(true),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 35,
+            bit_index: 34,
         },
     ),
     (
@@ -739,7 +739,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(true),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::NotRequired,
-            bit_index: 36,
+            bit_index: 35,
         },
     ),
     (
@@ -762,7 +762,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::Special,
-            bit_index: 37,
+            bit_index: 36,
         },
     ),
     (
@@ -777,7 +777,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::RequiredForAttestation,
-            bit_index: 38,
+            bit_index: 37,
         },
     ),
     (
@@ -792,7 +792,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::Variable,
             cert_gen: CertGenParam::RequiredForAttestation,
-            bit_index: 39,
+            bit_index: 38,
         },
     ),
     (
@@ -807,7 +807,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::OptionalForAttestation,
-            bit_index: 40,
+            bit_index: 39,
         },
     ),
     (
@@ -822,7 +822,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::OptionalForAttestation,
-            bit_index: 41,
+            bit_index: 40,
         },
     ),
     (
@@ -837,7 +837,7 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::OptionalForAttestation,
-            bit_index: 42,
+            bit_index: 41,
         },
     ),
     (
@@ -852,13 +852,28 @@ const INFO: [(Tag, Info); 59] = [
             keymint_auto_adds: AutoAddedCharacteristic(false),
             lifetime: ValueLifetime::FixedAtBoot,
             cert_gen: CertGenParam::OptionalForAttestation,
-            bit_index: 43,
+            bit_index: 42,
         },
     ),
     (
         Tag::AttestationIdImei,
         Info {
             name: "ATTESTATION_ID_IMEI",
+            tt: TagType::Bytes,
+            ext_asn1_type: Some("OCTET STRING"),
+            user_can_specify: UserSpecifiable(true),
+            characteristic: Characteristic::NotKeyCharacteristic,
+            op_param: OperationParam::KeyGenImport,
+            keymint_auto_adds: AutoAddedCharacteristic(false),
+            lifetime: ValueLifetime::FixedAtBoot,
+            cert_gen: CertGenParam::OptionalForAttestation,
+            bit_index: 43,
+        },
+    ),
+    (
+        Tag::AttestationIdSecondImei,
+        Info {
+            name: "ATTESTATION_ID_SECOND_IMEI",
             tt: TagType::Bytes,
             ext_asn1_type: Some("OCTET STRING"),
             user_can_specify: UserSpecifiable(true),

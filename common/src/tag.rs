@@ -1323,3 +1323,45 @@ pub fn check_rsa_wrapping_key_params(
     let rsa_oaep_decrypt_mode = DecryptionMode::OaepPadding { msg_digest, mgf_digest: *mgf_digest };
     Ok(rsa_oaep_decrypt_mode)
 }
+
+/// Calculate the [Luhn checksum](https://en.wikipedia.org/wiki/Luhn_algorithm) of the given number.
+fn luhn_checksum(mut val: u64) -> u64 {
+    let mut ii = 0;
+    let mut sum_digits = 0;
+    while val != 0 {
+        let curr_digit = val % 10;
+        let multiplier = if ii % 2 == 0 { 2 } else { 1 };
+        let digit_multiplied = curr_digit * multiplier;
+        sum_digits += (digit_multiplied % 10) + (digit_multiplied / 10);
+        val /= 10;
+        ii += 1;
+    }
+    (10 - (sum_digits % 10)) % 10
+}
+
+/// Derive an IMEI value from a first IMEI value, by incrementing by one and re-calculating
+/// the Luhn checksum.  Return an empty vector on any failure.
+pub fn increment_imei(imei: &[u8]) -> Vec<u8> {
+    // Expect ASCII digits.
+    let imei: &str = match core::str::from_utf8(imei) {
+        Ok(v) => v,
+        Err(_) => {
+            warn!("IMEI is not UTF-8");
+            return Vec::new();
+        }
+    };
+    let imei: u64 = match imei.parse() {
+        Ok(v) => v,
+        Err(_) => {
+            warn!("IMEI is not numeric");
+            return Vec::new();
+        }
+    };
+
+    // Drop trailing checksum digit, increment, and restore checksum.
+    let imei2 = (imei / 10) + 1;
+    let imei2 = (imei2 * 10) + luhn_checksum(imei2);
+
+    // Convert back to bytes.
+    alloc::format!("{}", imei2).into_bytes()
+}
