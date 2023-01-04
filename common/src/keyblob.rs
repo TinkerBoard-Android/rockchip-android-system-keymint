@@ -250,7 +250,6 @@ pub struct RootOfTrustInfo {
     pub verified_boot_key: Vec<u8>,
     pub device_boot_locked: bool,
     pub verified_boot_state: VerifiedBootState,
-    pub verified_boot_hash: Vec<u8>,
 }
 
 /// Derive a key encryption key used for key blob encryption. The key is an AES-256 key derived
