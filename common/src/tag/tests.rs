@@ -94,3 +94,32 @@ fn test_copyable_tags() {
         );
     }
 }
+
+#[test]
+fn test_luhn_checksum() {
+    let tests = vec![(0, 0), (7992739871, 3), (735423462345, 6), (721367498765427, 4)];
+    for (input, want) in tests {
+        let got = luhn_checksum(input);
+        assert_eq!(got, want, "mismatch for input {}", input);
+    }
+}
+
+#[test]
+fn test_increment_imei() {
+    let tests = vec![
+        // Anything that's not ASCII digits gives empty vec.
+        ("", ""),
+        ("01", ""),
+        ("01", ""),
+        ("7576", ""),
+        ("c328", ""), // Invalid UTF-8
+        // 721367498765404 => 721367498765412
+        ("373231333637343938373635343034", "373231333637343938373635343132"),
+        ("39393930", "3130303039"), // String gets longer
+    ];
+    for (input, want) in tests {
+        let input_data = hex::decode(input).unwrap();
+        let got = increment_imei(&input_data);
+        assert_eq!(hex::encode(got), want, "mismatch for input IMEI {}", input);
+    }
+}

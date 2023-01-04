@@ -221,6 +221,7 @@ Tag = &(
     Tag_DeviceUniqueAttestation: 1879048912,
     Tag_IdentityCredentialKey: 1879048913,
     Tag_StorageKey: 1879048914,
+    Tag_AttestationIdSecondImei: -1879047469,
     Tag_AssociatedData: -1879047192,
     Tag_Nonce: -1879047191,
     Tag_MacLength: 805307371,
@@ -354,6 +355,7 @@ KeyParam = &(
     [-1879047480, bstr], ; Tag_AttestationIdProduct
     [-1879047479, bstr], ; Tag_AttestationIdSerial
     [-1879047478, bstr], ; Tag_AttestationIdImei
+    [-1879047469, bstr], ; Tag_AttestationIdSecondImei
     [-1879047477, bstr], ; Tag_AttestationIdMeid
     [-1879047476, bstr], ; Tag_AttestationIdManufacturer
     [-1879047475, bstr], ; Tag_AttestationIdModel
