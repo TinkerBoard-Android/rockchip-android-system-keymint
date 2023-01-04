@@ -57,10 +57,9 @@ SecureDeletionData = [
     secure_deletion_secret: bstr .size 16,
 ]
 RootOfTrustInfo = [
-    verified_boot_key: bstr .size 32,
+    verified_boot_key: bstr,
     device_boot_locked: bool,
     verified_boot_state: VerifiedBootState,
-    verified_boot_hash: bstr .size 32,
 ]
 VerifiedBootState = &(
     VerifiedBootState_Verified: 0,
