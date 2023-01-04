@@ -96,7 +96,6 @@ fn main() {
         verified_boot_key: vec![0; 32],
         device_boot_locked: false,
         verified_boot_state: keymint::VerifiedBootState::Unverified,
-        verified_boot_hash: vec![0; 32],
     });
     schema.add(keymint::VerifiedBootState::Unverified);
 
