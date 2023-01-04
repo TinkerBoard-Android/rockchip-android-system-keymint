@@ -127,6 +127,7 @@ pub fn serialize(params: &[KeyParam]) -> Result<Vec<u8>, Error> {
             | KeyParam::AttestationIdProduct(v)
             | KeyParam::AttestationIdSerial(v)
             | KeyParam::AttestationIdImei(v)
+            | KeyParam::AttestationIdSecondImei(v)
             | KeyParam::AttestationIdMeid(v)
             | KeyParam::AttestationIdManufacturer(v)
             | KeyParam::AttestationIdModel(v)
@@ -222,6 +223,7 @@ pub fn serialize(params: &[KeyParam]) -> Result<Vec<u8>, Error> {
             | KeyParam::AttestationIdProduct(v)
             | KeyParam::AttestationIdSerial(v)
             | KeyParam::AttestationIdImei(v)
+            | KeyParam::AttestationIdSecondImei(v)
             | KeyParam::AttestationIdMeid(v)
             | KeyParam::AttestationIdManufacturer(v)
             | KeyParam::AttestationIdModel(v)
@@ -464,6 +466,11 @@ pub fn deserialize(data: &mut &[u8]) -> Result<Vec<KeyParam>, Error> {
             Tag::AttestationIdImei => {
                 KeyParam::AttestationIdImei(consume_blob(data, &mut next_blob_offset, blob_data)?)
             }
+            Tag::AttestationIdSecondImei => KeyParam::AttestationIdSecondImei(consume_blob(
+                data,
+                &mut next_blob_offset,
+                blob_data,
+            )?),
             Tag::AttestationIdMeid => {
                 KeyParam::AttestationIdMeid(consume_blob(data, &mut next_blob_offset, blob_data)?)
             }
@@ -554,6 +561,7 @@ pub fn param_compare(left: &KeyParam, right: &KeyParam) -> Ordering {
         (KeyParam::AttestationIdProduct(l), KeyParam::AttestationIdProduct(r)) => l.cmp(r),
         (KeyParam::AttestationIdSerial(l), KeyParam::AttestationIdSerial(r)) => l.cmp(r),
         (KeyParam::AttestationIdImei(l), KeyParam::AttestationIdImei(r)) => l.cmp(r),
+        (KeyParam::AttestationIdSecondImei(l), KeyParam::AttestationIdSecondImei(r)) => l.cmp(r),
         (KeyParam::AttestationIdMeid(l), KeyParam::AttestationIdMeid(r)) => l.cmp(r),
         (KeyParam::AttestationIdManufacturer(l), KeyParam::AttestationIdManufacturer(r)) => {
             l.cmp(r)

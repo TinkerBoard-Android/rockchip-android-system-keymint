@@ -343,6 +343,9 @@ impl Fromm<wire::keymint::KeyParam> for keymint::KeyParameter::KeyParameter {
             KeyParam::AttestationIdImei(v) => {
                 (Tag::ATTESTATION_ID_IMEI, KeyParameterValue::Blob(v))
             }
+            KeyParam::AttestationIdSecondImei(v) => {
+                (Tag::ATTESTATION_ID_SECOND_IMEI, KeyParameterValue::Blob(v))
+            }
             KeyParam::AttestationIdMeid(v) => {
                 (Tag::ATTESTATION_ID_MEID, KeyParameterValue::Blob(v))
             }
@@ -650,6 +653,9 @@ impl TryFromm<&keymint::KeyParameter::KeyParameter> for Option<KeyParam> {
             }
             keymint::Tag::Tag::ATTESTATION_ID_IMEI => {
                 Some(KeyParam::AttestationIdImei(clone_blob!(val)?))
+            }
+            keymint::Tag::Tag::ATTESTATION_ID_SECOND_IMEI => {
+                Some(KeyParam::AttestationIdSecondImei(clone_blob!(val)?))
             }
             keymint::Tag::Tag::ATTESTATION_ID_MEID => {
                 Some(KeyParam::AttestationIdMeid(clone_blob!(val)?))
