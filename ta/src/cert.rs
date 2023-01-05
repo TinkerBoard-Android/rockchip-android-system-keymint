@@ -383,7 +383,7 @@ macro_rules! check_attestation_id {
         {
             if let Some(val) = get_opt_tag_value!($params, $variant)? {
                 match $mustmatch {
-                    None => return Err(km_err!(AttestationIdsNotProvisioned,
+                    None => return Err(km_err!(CannotAttestIds,
                                                "no attestation IDs provisioned")),
                     Some(want)  => if val != want {
                         return Err(km_err!(CannotAttestIds,
