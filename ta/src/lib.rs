@@ -1,8 +1,5 @@
 //! KeyMint trusted application (TA) implementation.
 
-// TODO: remove after complete implementing RKP functionality.
-#![allow(dead_code)]
-#![allow(unused)]
 #![no_std]
 extern crate alloc;
 
@@ -971,7 +968,7 @@ impl<'a> KeyMintTa<'a> {
             // We might have failed to parse the keyblob because it is in some prior format.
             if let Some(old_key) = self.dev.legacy_key.as_mut() {
                 if let Err(e) = old_key.delete_legacy_key(keyblob) {
-                    error!("failed to parse keyblob as legacy, ignoring");
+                    error!("failed to parse keyblob as legacy : {:?}, ignoring", e);
                 }
             } else {
                 error!("failed to parse keyblob, ignoring");
