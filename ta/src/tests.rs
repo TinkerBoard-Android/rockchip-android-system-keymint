@@ -202,12 +202,12 @@ fn test_key_description_encode_decode() {
 #[test]
 fn test_split_rsp_invalid_input() {
     // Check for invalid inputs
-    let mut rsp = vec![];
+    let rsp = vec![];
     let result = split_rsp(&rsp, 5);
     assert!(result.is_err());
     assert!(matches!(result, Err(Error::Hal(ErrorCode::InvalidArgument, _))));
 
-    let mut rsp = vec![0x82, 0x21, 0x80];
+    let rsp = vec![0x82, 0x21, 0x80];
     let result = split_rsp(&rsp, 1);
     assert!(matches!(result, Err(Error::Hal(ErrorCode::InvalidArgument, _))));
 }
@@ -215,7 +215,7 @@ fn test_split_rsp_invalid_input() {
 #[test]
 fn test_split_rsp_smaller_input() {
     // Test for rsp_data size < max_size
-    let mut rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80];
+    let rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80];
     let result = split_rsp(&rsp, 20).expect("result should not be error");
     assert_eq!(result.len(), 1);
     let inner_msg = result.get(0).expect("single message is expected").as_slice();
@@ -229,7 +229,7 @@ fn test_split_rsp_smaller_input() {
 #[test]
 fn test_split_rsp_allowed_size_input() {
     // Test for rsp_data size = allowed message length
-    let mut rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80];
+    let rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80];
     let result = split_rsp(&rsp, 6).expect("result should not be error");
     assert_eq!(result.len(), 1);
     let inner_msg = result.get(0).expect("single message is expected").as_slice();
@@ -243,7 +243,7 @@ fn test_split_rsp_allowed_size_input() {
 #[test]
 fn test_split_rsp_max_size_input() {
     // Test for rsp_data size = max_size
-    let mut rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80, 0x82];
+    let rsp = vec![0x82, 0x13, 0x82, 0x80, 0x80, 0x82];
     let result = split_rsp(&rsp, 6).expect("result should not be error");
     assert_eq!(result.len(), 2);
 
