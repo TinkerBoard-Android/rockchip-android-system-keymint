@@ -2,14 +2,12 @@
 
 use super::KeyMintTa;
 use crate::coset::{
-    cbor::value::Value, iana, AsCborValue, CborSerializable, CoseKey, CoseKeyBuilder, CoseMac0,
-    CoseMac0Builder, CoseSign1Builder, HeaderBuilder, Label,
+    cbor::value::Value, iana, AsCborValue, CborSerializable, CoseKey, CoseMac0, CoseMac0Builder,
+    HeaderBuilder, Label,
 };
-use crate::device::CsrSigningAlgorithm;
 use crate::RpcInfo;
 use alloc::string::{String, ToString};
 use alloc::{vec, vec::Vec};
-use der::{asn1::OctetString, Decode};
 use kmr_common::crypto::{
     ec::{CoseKeyPurpose, RKP_TEST_KEY_CBOR_MARKER},
     hmac_sha256, KeyMaterial,
@@ -19,8 +17,8 @@ use kmr_wire::{
     cbor,
     cbor::cbor,
     keymint::{
-        Algorithm, DateTime, Digest, EcCurve, KeyCreationResult, KeyParam, KeyPurpose,
-        SecurityLevel, VerifiedBootState,
+        Algorithm, DateTime, Digest, EcCurve, KeyParam, KeyPurpose, SecurityLevel,
+        VerifiedBootState,
     },
     read_to_value, rpc,
     rpc::{
@@ -31,7 +29,6 @@ use kmr_wire::{
     types::KeySizeInBits,
     CborError,
 };
-use x509_cert::Certificate;
 
 const RPC_P256_KEYGEN_PARAMS: [KeyParam; 8] = [
     KeyParam::Purpose(KeyPurpose::AttestKey),
@@ -133,7 +130,7 @@ impl<'a> KeyMintTa<'a> {
 
     pub(crate) fn generate_ecdsa_p256_keypair(
         &mut self,
-        mut test_mode: rpc::TestMode,
+        test_mode: rpc::TestMode,
     ) -> Result<(MacedPublicKey, Vec<u8>), Error> {
         let (key_material, chars) = self.generate_key_material(&RPC_P256_KEYGEN_PARAMS)?;
 
@@ -171,7 +168,7 @@ impl<'a> KeyMintTa<'a> {
 
     pub(crate) fn generate_cert_req(
         &self,
-        test_mode: rpc::TestMode,
+        _test_mode: rpc::TestMode,
         _keys_to_sign: Vec<MacedPublicKey>,
         _eek_chain: &[u8],
         _challenge: &[u8],
