@@ -1,12 +1,10 @@
 //! Traits representing access to device-specific information and functionality.
 
-// TODO: remove after complete implementing RKP functionality.
-#![allow(dead_code)]
 use crate::coset::{iana, AsCborValue, CoseSign1Builder, HeaderBuilder};
 use alloc::{boxed::Box, vec::Vec};
 use kmr_common::{
     crypto, crypto::aes, crypto::KeyMaterial, crypto::OpaqueOr, crypto::RawKeyMaterial, keyblob,
-    log_unimpl, rpc_err, unimpl, Error,
+    log_unimpl, unimpl, Error,
 };
 use kmr_wire::{keymint, rpc, CborError};
 use log::error;
@@ -210,7 +208,7 @@ pub trait RetrieveRpcArtifacts {
         signing_algorithm: &CsrSigningAlgorithm,
         payload: &[u8],
         _aad: &[u8],
-        rpc_v2: Option<RpcV2Req<'a>>,
+        _rpc_v2: Option<RpcV2Req<'a>>,
     ) -> Result<Vec<u8>, Error> {
         let cose_sign_algorithm = match signing_algorithm {
             CsrSigningAlgorithm::ES256 => iana::Algorithm::ES256,
@@ -273,10 +271,10 @@ pub enum RpcV2Req<'a> {
 // returned with `DiceInfo` in IRPC V2 test mode.
 #[derive(Clone)]
 pub struct RpcV2TestCDIPriv {
-    test_cdi_priv: Option<OpaqueOr<crypto::ec::Key>>,
+    pub test_cdi_priv: Option<OpaqueOr<crypto::ec::Key>>,
     // An optional opaque blob set by the TA, if the TA wants a mechanism to relate the
     // two requests: `get_dice_info` and `sign_data` related to the same CSR.
-    context: Vec<u8>,
+    pub context: Vec<u8>,
 }
 
 /// Marker implementation for implementations that do not support `BOOTLOADER_ONLY` keys, which
@@ -334,7 +332,7 @@ impl RetrieveRpcArtifacts for NoOpRetrieveRpcArtifacts {
         &self,
         _hkdf: &dyn crypto::Hkdf,
         _context: &[u8],
-        output_len: usize,
+        _output_len: usize,
     ) -> Result<Vec<u8>, Error> {
         unimpl!();
     }
