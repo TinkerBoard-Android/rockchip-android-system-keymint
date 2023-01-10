@@ -38,6 +38,9 @@ pub const KEYMINT_V3_VERSION: i32 = 300;
 pub const ATTESTATION_EXTENSION_OID: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.3.6.1.4.1.11129.2.1.17");
 
+/// Empty book key value to use in attestations.
+const EMPTY_BOOT_KEY: [u8; 32] = [0u8; 32];
+
 /// Build an ASN.1 DER-encodable `Certificate`.
 pub(crate) fn certificate<'a>(
     tbs_cert: TbsCertificate<'a>,
@@ -1138,8 +1141,15 @@ struct RootOfTrust<'a> {
 
 impl<'a> From<&'a keymint::BootInfo> for RootOfTrust<'a> {
     fn from(info: &keymint::BootInfo) -> RootOfTrust {
+        let verified_boot_key: &[u8] = if info.verified_boot_key.is_empty() {
+            // If an empty verified boot key was passed by the boot loader, set the verified boot
+            // key in the attestation to all zeroes.
+            &EMPTY_BOOT_KEY[..]
+        } else {
+            &info.verified_boot_key[..]
+        };
         RootOfTrust {
-            verified_boot_key: &info.verified_boot_key[..],
+            verified_boot_key,
             device_locked: info.device_boot_locked,
             verified_boot_state: info.verified_boot_state.into(),
             verified_boot_hash: &info.verified_boot_hash[..],
