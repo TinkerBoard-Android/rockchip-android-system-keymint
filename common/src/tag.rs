@@ -1039,6 +1039,13 @@ fn check_begin_rsa_params(
     if for_signing(purpose) || (for_encryption(purpose) && padding == PaddingMode::RsaOaep) {
         digest = Some(get_digest(params)?);
     }
+    if for_signing(purpose) && padding == PaddingMode::None && digest != Some(Digest::None) {
+        return Err(km_err!(
+            IncompatibleDigest,
+            "unpadded RSA sign requires Digest::None not {:?}",
+            digest
+        ));
+    }
     match padding {
         PaddingMode::None => {}
         PaddingMode::RsaOaep if for_encryption(purpose) => {
@@ -1106,9 +1113,12 @@ fn check_begin_ec_params(
     let curve = get_ec_curve(chars)?;
     if purpose == KeyPurpose::Sign {
         let digest = get_digest(params)?;
+        if digest == Digest::Md5 {
+            return Err(km_err!(UnsupportedDigest, "Digest::MD5 unsupported for EC signing"));
+        }
         if curve == EcCurve::Curve25519 && digest != Digest::None {
             return Err(km_err!(
-                IncompatibleDigest,
+                UnsupportedDigest,
                 "Ed25519 only supports Digest::None not {:?}",
                 digest
             ));
@@ -1194,11 +1204,7 @@ fn check_begin_3des_params(params: &[KeyParam], caller_nonce: Option<&[u8]>) -> 
     match bmode {
         BlockMode::Cbc | BlockMode::Ecb => {}
         _ => {
-            return Err(km_err!(
-                IncompatibleBlockMode,
-                "block mode {:?} not valid for 3-DES",
-                bmode
-            ))
+            return Err(km_err!(UnsupportedBlockMode, "block mode {:?} not valid for 3-DES", bmode))
         }
     }
 
