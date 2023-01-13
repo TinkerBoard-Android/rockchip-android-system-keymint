@@ -254,7 +254,9 @@ pub struct RootOfTrustInfo {
 
 /// Derive a key encryption key used for key blob encryption. The key is an AES-256 key derived
 /// from `root_key` using HKDF (RFC 5869) with HMAC-SHA256:
-/// - input keying material = a root key held in hardware
+/// - input keying material = a root key held in hardware. If it contains explicit key material,
+///                           perform full HKDF. If the root key is an opaque one, we assume that
+///                           the key is able to be directly used on the HKDF expand step.
 /// - salt = absent
 /// - info = the following three or four chunks of context data concatenated:
 ///    - content of `key_derivation_input` (which is random data)
@@ -263,7 +265,7 @@ pub struct RootOfTrustInfo {
 ///    - (if `sdd` provided) CBOR serialization of the `SecureDeletionData`
 pub fn derive_kek(
     kdf: &dyn crypto::Hkdf,
-    root_key: &crypto::RawKeyMaterial,
+    root_key: &crypto::OpaqueOr<crypto::hmac::Key>,
     key_derivation_input: &[u8; 32],
     characteristics: Vec<KeyCharacteristics>,
     hidden: Vec<KeyParam>,
@@ -275,7 +277,10 @@ pub fn derive_kek(
     if let Some(sdd) = sdd {
         info.try_extend_from_slice(&sdd.into_vec()?)?;
     }
-    let data = kdf.hkdf(&[], &root_key.0, &info, 32)?;
+    let data = match root_key {
+        crypto::OpaqueOr::Explicit(key_material) => kdf.hkdf(&[], &key_material.0, &info, 32)?,
+        key @ crypto::OpaqueOr::Opaque(_) => kdf.expand(key, &info, 32)?,
+    };
     Ok(crypto::aes::Key::Aes256(data.try_into().unwrap(/* safe: len checked */)))
 }
 
@@ -313,7 +318,7 @@ pub fn encrypt(
     aes: &dyn crypto::Aes,
     kdf: &dyn crypto::Hkdf,
     rng: &mut dyn crypto::Rng,
-    root_key: &crypto::RawKeyMaterial,
+    root_key: &crypto::OpaqueOr<crypto::hmac::Key>,
     kek_context: &[u8],
     plaintext_keyblob: PlaintextKeyBlob,
     hidden: Vec<KeyParam>,
@@ -388,7 +393,7 @@ pub fn decrypt(
     sdd_mgr: Option<&dyn SecureDeletionSecretManager>,
     aes: &dyn crypto::Aes,
     kdf: &dyn crypto::Hkdf,
-    root_key: &crypto::RawKeyMaterial,
+    root_key: &crypto::OpaqueOr<crypto::hmac::Key>,
     encrypted_keyblob: EncryptedKeyBlob,
     hidden: Vec<KeyParam>,
 ) -> Result<PlaintextKeyBlob, Error> {
