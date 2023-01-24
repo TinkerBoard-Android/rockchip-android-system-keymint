@@ -13,7 +13,7 @@ use kmr_wire::{
     },
     KeySizeInBits,
 };
-use log::warn;
+use log::{info, warn};
 
 mod info;
 pub use info::*;
@@ -1369,6 +1369,11 @@ fn luhn_checksum(mut val: u64) -> u64 {
 /// Derive an IMEI value from a first IMEI value, by incrementing by one and re-calculating
 /// the Luhn checksum.  Return an empty vector on any failure.
 pub fn increment_imei(imei: &[u8]) -> Vec<u8> {
+    if imei.is_empty() {
+        info!("empty IMEI");
+        return Vec::new();
+    }
+
     // Expect ASCII digits.
     let imei: &str = match core::str::from_utf8(imei) {
         Ok(v) => v,
