@@ -44,7 +44,7 @@ use operation::{OpHandle, Operation};
 mod tests;
 
 /// Maximum number of parallel operations supported when running as TEE.
-const MAX_TEE_OPERATIONS: usize = 32;
+const MAX_TEE_OPERATIONS: usize = 16;
 
 /// Maximum number of parallel operations supported when running as StrongBox.
 const MAX_STRONGBOX_OPERATIONS: usize = 4;
