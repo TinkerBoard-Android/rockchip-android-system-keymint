@@ -138,7 +138,7 @@ pub fn test_hkdf<H: Hmac>(hmac: H) {
         let info = hex::decode(test.info).unwrap();
 
         let got = hmac.hkdf(&salt, &ikm, &info, test.out_len).unwrap();
-        assert_eq!(hex::encode(&got), test.want, "incorrect HKDF result for case {}", i);
+        assert_eq!(hex::encode(got), test.want, "incorrect HKDF result for case {}", i);
     }
 }
 
@@ -361,7 +361,7 @@ pub fn test_ckdf<T: Ckdf>(kdf: T) {
 
     let result = kdf.ckdf(&key.into(), label, &[&v0, &v1, &v2, &v3], 32).unwrap();
     assert_eq!(
-        hex::encode(&result),
+        hex::encode(result),
         concat!("ac9af88a02241f53d43056a4676c42ee", "f06825755e419e7bd20f4e57487717aa")
     );
 }

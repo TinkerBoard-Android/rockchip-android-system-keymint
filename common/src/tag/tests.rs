@@ -40,7 +40,7 @@ fn test_legacy_serialization() {
         let want_data = hex::decode(hex_data).unwrap();
 
         let got_data = legacy::serialize(&want_params).unwrap();
-        assert_eq!(hex::encode(&got_data), hex_data);
+        assert_eq!(hex::encode(got_data), hex_data);
 
         let mut data = &want_data[..];
         let got_params = legacy::deserialize(&mut data).unwrap();

@@ -166,7 +166,7 @@ pub fn serialize(params: &[KeyParam]) -> Result<Vec<u8>, Error> {
             KeyParam::Origin(v) => result.try_extend_from_slice(&(*v as u32).to_ne_bytes())?,
 
             // `u32`-holding variants.
-            KeyParam::KeySize(v) => result.try_extend_from_slice(&(v.0 as u32).to_ne_bytes())?,
+            KeyParam::KeySize(v) => result.try_extend_from_slice(&(v.0).to_ne_bytes())?,
             KeyParam::MinMacLength(v)
             | KeyParam::MaxUsesPerBoot(v)
             | KeyParam::UsageCountLimit(v)
@@ -182,10 +182,10 @@ pub fn serialize(params: &[KeyParam]) -> Result<Vec<u8>, Error> {
 
             // `u64`-holding variants.
             KeyParam::RsaPublicExponent(v) => {
-                result.try_extend_from_slice(&(v.0 as u64).to_ne_bytes())?
+                result.try_extend_from_slice(&(v.0).to_ne_bytes())?
             }
             KeyParam::UserSecureId(v) => {
-                result.try_extend_from_slice(&(*v as u64).to_ne_bytes())?
+                result.try_extend_from_slice(&(*v).to_ne_bytes())?
             }
 
             // `true`-holding variants.
