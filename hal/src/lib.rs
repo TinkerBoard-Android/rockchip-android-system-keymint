@@ -193,7 +193,7 @@ where
     // the same in all spaces.
     if error_code != ErrorCode::Ok as i32 {
         error!("HAL: command {:?} failed: {:?}", <R>::CODE, error_code);
-        return Err(binder::Status::new_service_specific_error(error_code as i32, None));
+        return Err(binder::Status::new_service_specific_error(error_code, None));
     }
 
     // The optional response should be an array of exactly 1 element (because the 0-element case

@@ -86,7 +86,7 @@ impl EncryptedKeyBlob {
         if self.format.is_versioned() {
             let kdf_version = self.kdf_version.ok_or_else(|| {
                 km_err!(UnknownError, "keyblob of format {:?} missing kdf_version", self.format)
-            })? as u32;
+            })?;
             let addl_info = self.addl_info.ok_or_else(|| {
                 km_err!(UnknownError, "keyblob of format {:?} missing addl_info", self.format)
             })? as u32;
@@ -96,7 +96,7 @@ impl EncryptedKeyBlob {
         result.extend_from_slice(&hw_enforced_data);
         result.extend_from_slice(&sw_enforced_data);
         if let Some(slot) = self.key_slot {
-            result.extend_from_slice(&(slot as u32).to_ne_bytes());
+            result.extend_from_slice(&slot.to_ne_bytes());
         }
         Ok(result)
     }
