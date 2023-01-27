@@ -315,7 +315,7 @@ impl InnerSerialize for Vec<u8> {
             return Err(Error::DataTruncated);
         }
         let mut buf = Vec::new();
-        buf.try_reserve(len as usize).map_err(|_e| Error::AllocationFailed)?;
+        buf.try_reserve(len).map_err(|_e| Error::AllocationFailed)?;
         buf.extend_from_slice(&rest[..len]);
         Ok((buf, &rest[len..]))
     }
