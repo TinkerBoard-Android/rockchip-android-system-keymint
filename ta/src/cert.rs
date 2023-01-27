@@ -1264,7 +1264,7 @@ mod tests {
         ];
         for (input, want) in tests {
             let got = input.to_vec().unwrap();
-            assert_eq!(hex::encode(&got), want);
+            assert_eq!(hex::encode(got), want);
         }
     }
 
