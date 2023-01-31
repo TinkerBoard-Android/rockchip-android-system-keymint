@@ -10,7 +10,7 @@ impl<'a> crate::KeyMintTa<'a> {
         if let Some(clock) = &self.imp.clock {
             let mut ret =
                 TimeStampToken { challenge, timestamp: clock.now().into(), mac: Vec::new() };
-            let mac_input = timestamp_token_mac_input(&ret)?;
+            let mac_input = self.dev.keys.timestamp_token_mac_input(&ret)?;
             ret.mac = self.device_hmac(&mac_input)?;
             Ok(ret)
         } else {

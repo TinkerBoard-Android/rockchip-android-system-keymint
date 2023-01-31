@@ -6,7 +6,7 @@ use kmr_common::{
     crypto, crypto::aes, crypto::KeyMaterial, crypto::OpaqueOr, crypto::RawKeyMaterial, keyblob,
     log_unimpl, unimpl, Error,
 };
-use kmr_wire::{keymint, rpc, CborError};
+use kmr_wire::{keymint, rpc, secureclock::TimeStampToken, CborError};
 use log::error;
 
 use crate::rkp::serialize_cbor;
@@ -79,6 +79,13 @@ pub trait RetrieveKeyMaterial {
         // By default, use CKDF on the key agreement secret to derive a key.
         let unique_id_label = b"UniqueID HBK 32B";
         ckdf.ckdf(&self.kak()?.into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
+    }
+
+    /// Build the HMAC input for a [`TimeStampToken`].  The default implementation produces
+    /// data that matches the `ISecureClock` AIDL specification; this method should only be
+    /// overridden for back-compatibility reasons.
+    fn timestamp_token_mac_input(&self, token: &TimeStampToken) -> Result<Vec<u8>, Error> {
+        crate::clock::timestamp_token_mac_input(token)
     }
 }
 
