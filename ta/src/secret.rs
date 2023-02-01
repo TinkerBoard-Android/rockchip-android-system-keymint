@@ -28,7 +28,7 @@ impl<'a> crate::KeyMintTa<'a> {
 
         let context = shared_secret_context(params, local_params)?;
         let key = hmac::Key(self.imp.ckdf.ckdf(
-            &self.dev.keys.kak()?.into(),
+            &self.dev.keys.kak()?,
             kmr_wire::sharedsecret::KEY_AGREEMENT_LABEL.as_bytes(),
             &[&context],
             kmr_common::crypto::SHA256_DIGEST_LEN,

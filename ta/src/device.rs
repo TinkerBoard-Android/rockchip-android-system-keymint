@@ -3,8 +3,8 @@
 use crate::coset::{iana, AsCborValue, CoseSign1Builder, HeaderBuilder};
 use alloc::{boxed::Box, vec::Vec};
 use kmr_common::{
-    crypto, crypto::aes, crypto::KeyMaterial, crypto::OpaqueOr, crypto::RawKeyMaterial, keyblob,
-    log_unimpl, unimpl, Error,
+    crypto, crypto::aes, crypto::hmac, crypto::KeyMaterial, crypto::OpaqueOr, keyblob, log_unimpl,
+    unimpl, Error,
 };
 use kmr_wire::{keymint, rpc, secureclock::TimeStampToken, CborError};
 use log::error;
@@ -56,7 +56,7 @@ pub struct Implementation<'a> {
 pub trait RetrieveKeyMaterial {
     /// Retrieve the root key used for derivation of a per-keyblob key encryption key (KEK), passing
     /// in any opaque context.
-    fn root_kek(&self, context: &[u8]) -> Result<RawKeyMaterial, Error>;
+    fn root_kek(&self, context: &[u8]) -> Result<OpaqueOr<hmac::Key>, Error>;
 
     /// Retrieve any opaque (but non-confidential) context needed for future calls to [`root_kek`].
     /// Context should not include confidential data (it will be stored in the clear).
@@ -66,7 +66,7 @@ pub trait RetrieveKeyMaterial {
     }
 
     /// Retrieve the key agreement key used for shared secret negotiation.
-    fn kak(&self) -> Result<aes::Key, Error>;
+    fn kak(&self) -> Result<OpaqueOr<aes::Key>, Error>;
 
     /// Install the device HMAC agreed by shared secret negotiation into hardware (optional).
     fn hmac_key_agreed(&self, _key: &crypto::hmac::Key) -> Option<Box<dyn DeviceHmac>> {
@@ -78,7 +78,7 @@ pub trait RetrieveKeyMaterial {
     fn unique_id_hbk(&self, ckdf: &dyn crypto::Ckdf) -> Result<crypto::hmac::Key, Error> {
         // By default, use CKDF on the key agreement secret to derive a key.
         let unique_id_label = b"UniqueID HBK 32B";
-        ckdf.ckdf(&self.kak()?.into(), unique_id_label, &[], 32).map(crypto::hmac::Key::new)
+        ckdf.ckdf(&self.kak()?, unique_id_label, &[], 32).map(crypto::hmac::Key::new)
     }
 
     /// Build the HMAC input for a [`TimeStampToken`].  The default implementation produces
@@ -313,11 +313,11 @@ pub trait StorageKeyWrapper {
 // intended for convenience during the process of porting the KeyMint code to a new environment.
 pub struct NoOpRetrieveKeyMaterial;
 impl RetrieveKeyMaterial for NoOpRetrieveKeyMaterial {
-    fn root_kek(&self, _context: &[u8]) -> Result<RawKeyMaterial, Error> {
+    fn root_kek(&self, _context: &[u8]) -> Result<OpaqueOr<hmac::Key>, Error> {
         unimpl!();
     }
 
-    fn kak(&self) -> Result<aes::Key, Error> {
+    fn kak(&self) -> Result<OpaqueOr<aes::Key>, Error> {
         unimpl!();
     }
 }
