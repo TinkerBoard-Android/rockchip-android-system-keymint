@@ -422,7 +422,19 @@ pub trait AccumulatingOperation {
 /// A default implementation of this trait is available (in `crypto.rs`) for any type that
 /// implements [`Hmac`].
 pub trait Hkdf {
-    fn hkdf(&self, salt: &[u8], ikm: &[u8], info: &[u8], out_len: usize) -> Result<Vec<u8>, Error>;
+    fn hkdf(&self, salt: &[u8], ikm: &[u8], info: &[u8], out_len: usize) -> Result<Vec<u8>, Error> {
+        let prk = self.extract(salt, ikm)?;
+        self.expand(&prk, info, out_len)
+    }
+
+    fn extract(&self, salt: &[u8], ikm: &[u8]) -> Result<OpaqueOr<hmac::Key>, Error>;
+
+    fn expand(
+        &self,
+        prk: &OpaqueOr<hmac::Key>,
+        info: &[u8],
+        out_len: usize,
+    ) -> Result<Vec<u8>, Error>;
 }
 
 /// Abstraction of CKDF key derivation with AES-CMAC KDF from NIST SP 800-108 in counter mode (see
