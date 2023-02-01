@@ -453,20 +453,21 @@ pub fn hmac_sha256(hmac: &dyn Hmac, key: &[u8], data: &[u8]) -> Result<Vec<u8>, 
 
 /// Default implementation of [`Hkdf`] for any type implementing [`Hmac`].
 impl<T: Hmac> Hkdf for T {
-    fn hkdf(
-        &self,
-        mut salt: &[u8],
-        ikm: &[u8],
-        info: &[u8],
-        out_len: usize,
-    ) -> Result<Vec<u8>, Error> {
-        // HKDF extract
+    fn extract(&self, mut salt: &[u8], ikm: &[u8]) -> Result<OpaqueOr<hmac::Key>, Error> {
         if salt.is_empty() {
             salt = &HKDF_EMPTY_SALT[..];
         }
         let prk = hmac_sha256(self, salt, ikm)?;
+        Ok(OpaqueOr::Explicit(hmac::Key::new(prk)))
+    }
 
-        // HKDF expand
+    fn expand(
+        &self,
+        prk: &OpaqueOr<hmac::Key>,
+        info: &[u8],
+        out_len: usize,
+    ) -> Result<Vec<u8>, Error> {
+        let prk = &explicit!(prk)?.0;
         let n = (out_len + SHA256_DIGEST_LEN - 1) / SHA256_DIGEST_LEN;
         if n > 256 {
             return Err(km_err!(UnknownError, "overflow in hkdf"));
@@ -480,7 +481,7 @@ impl<T: Hmac> Hkdf for T {
             input.extend_from_slice(info);
             input.push(idx + 1);
 
-            t = hmac_sha256(self, &prk, &input)?;
+            t = hmac_sha256(self, prk, &input)?;
             okm.try_extend_from_slice(&t)?;
         }
         okm.truncate(out_len);
