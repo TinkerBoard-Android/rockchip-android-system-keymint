@@ -410,6 +410,14 @@ pub struct SetAttestationIdsRequest {
 #[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
 pub struct SetAttestationIdsResponse {}
 
+#[derive(Clone, PartialEq, Eq, LegacySerialize, ZeroizeOnDrop)]
+pub struct SetAttestationIdsKM3Request {
+    pub base: SetAttestationIdsRequest,
+    pub second_imei: Vec<u8>,
+}
+#[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
+pub struct SetAttestationIdsKM3Response {}
+
 // Legacy messages of interest from `trusty_keymaster_messages.h`.
 
 #[derive(Clone, PartialEq, Eq, Debug, LegacySerialize)]
@@ -583,6 +591,7 @@ declare_req_rsp_enums! { TrustyKeymasterOperation => (TrustyPerformOpReq, Trusty
     ClearAttestationCertChain = 0xa000 =>            (ClearAttestationCertChainRequest, ClearAttestationCertChainResponse),
     SetWrappedAttestationKey = 0xb000 =>             (SetWrappedAttestationKeyRequest, SetWrappedAttestationKeyResponse),
     SetAttestationIds = 0xc000 =>                    (SetAttestationIdsRequest, SetAttestationIdsResponse),
+    SetAttestationIdsKM3 = 0xc001 =>                 (SetAttestationIdsKM3Request, SetAttestationIdsKM3Response),
     ConfigureBootPatchlevel = 0xd0000 =>             (ConfigureBootPatchlevelRequest, ConfigureBootPatchlevelResponse),
 } }
 
