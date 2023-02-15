@@ -199,23 +199,23 @@ pub trait RetrieveRpcArtifacts {
     // If a particular implementation would like to return the signature in a COSE_Sign1 message,
     // they can mark this unimplemented and override the default implementation in the
     // `sign_data_in_cose_sign1` method below.
-    fn sign_data<'a>(
+    fn sign_data(
         &self,
         ec: &dyn crypto::Ec,
         data: &[u8],
-        rpc_v2: Option<RpcV2Req<'a>>,
+        rpc_v2: Option<RpcV2Req>,
     ) -> Result<Vec<u8>, Error>;
 
     // Sign the payload and return a COSE_Sign1 message. In IRPC V2, the `payload` is the MAC Key.
     // In IRPC V3, the `payload` is the `Data` that the `SignedData` is parameterized with (i.e. a
     // CBOR array containing `challenge` and `CsrPayload`).
-    fn sign_data_in_cose_sign1<'a>(
+    fn sign_data_in_cose_sign1(
         &self,
         ec: &dyn crypto::Ec,
         signing_algorithm: &CsrSigningAlgorithm,
         payload: &[u8],
         _aad: &[u8],
-        _rpc_v2: Option<RpcV2Req<'a>>,
+        _rpc_v2: Option<RpcV2Req>,
     ) -> Result<Vec<u8>, Error> {
         let cose_sign_algorithm = match signing_algorithm {
             CsrSigningAlgorithm::ES256 => iana::Algorithm::ES256,
@@ -348,11 +348,11 @@ impl RetrieveRpcArtifacts for NoOpRetrieveRpcArtifacts {
         unimpl!();
     }
 
-    fn sign_data<'a>(
+    fn sign_data(
         &self,
         _ec: &dyn crypto::Ec,
         _data: &[u8],
-        _rpc_v2: Option<RpcV2Req<'a>>,
+        _rpc_v2: Option<RpcV2Req>,
     ) -> Result<Vec<u8>, Error> {
         unimpl!();
     }
