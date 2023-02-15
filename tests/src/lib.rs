@@ -6,8 +6,10 @@ use kmr_common::crypto::{
     SymmetricOperation,
 };
 use kmr_common::{keyblob, keyblob::SlotPurpose};
+use kmr_ta::device::{SigningAlgorithm, SigningKey, SigningKeyType};
 use kmr_wire::keymint::Digest;
 use std::collections::HashMap;
+use x509_cert::der::{Decode, Encode};
 
 /// Test basic [`Rng`] functionality.
 pub fn test_rng<R: Rng>(rng: &mut R) {
@@ -464,6 +466,7 @@ pub fn test_aes_gcm<A: Aes>(aes: A) {
     }
 }
 
+/// Test basic triple-DES functionality.
 pub fn test_des<D: Des>(des: D) {
     struct TestCase {
         key: &'static str,
@@ -503,6 +506,9 @@ pub fn test_des<D: Des>(des: D) {
     }
 }
 
+/// Test secure deletion secret management.
+///
+/// Warning: this test will use slots in the provided manager, and may leak slots on failure.
 pub fn test_sdd_mgr<M: keyblob::SecureDeletionSecretManager, R: Rng>(mut sdd_mgr: M, mut rng: R) {
     let (slot1, sdd1) = sdd_mgr.new_secret(&mut rng, SlotPurpose::KeyGeneration).unwrap();
     assert!(sdd_mgr.get_secret(slot1).unwrap() == sdd1);
@@ -519,4 +525,54 @@ pub fn test_sdd_mgr<M: keyblob::SecureDeletionSecretManager, R: Rng>(mut sdd_mgr
     assert!(sdd_mgr.delete_secret(slot1).is_err());
 
     assert!(sdd_mgr.delete_secret(slot2).is_ok());
+}
+
+/// Test that attestation certificates parse as X.509 structures.
+pub fn test_signing_cert_parse<T: kmr_ta::device::RetrieveCertSigningInfo>(
+    certs: T,
+    is_strongbox: bool,
+) {
+    let avail = if is_strongbox {
+        vec![SigningKey::Batch, SigningKey::DeviceUnique]
+    } else {
+        vec![SigningKey::Batch]
+    };
+    for which in avail {
+        for algo_hint in [SigningAlgorithm::Ec, SigningAlgorithm::Rsa] {
+            let info = SigningKeyType { which, algo_hint };
+            let chain = certs
+                .cert_chain(info)
+                .unwrap_or_else(|_| panic!("failed to retrieve chain for {:?}", info));
+
+            // Check that the attestation chain looks basically valid (parses as DER,
+            // has subject/issuer match).
+            let mut prev_subject_data = vec![];
+            for (idx, cert) in chain.iter().rev().enumerate() {
+                let cert = x509_cert::Certificate::from_der(&cert.encoded_certificate)
+                    .expect("failed to parse cert");
+
+                let subject_data = cert.tbs_certificate.subject.to_vec().unwrap();
+                let issuer_data = cert.tbs_certificate.issuer.to_vec().unwrap();
+                if idx == 0 {
+                    // First cert should be self-signed, and so have subject==issuer.
+                    assert_eq!(
+                        hex::encode(&subject_data),
+                        hex::encode(&issuer_data),
+                        "root cert has subject != issuer for {:?}",
+                        info
+                    );
+                } else {
+                    // Issuer of cert should be the subject of the previous cert.
+                    assert_eq!(
+                        hex::encode(prev_subject_data),
+                        hex::encode(&issuer_data),
+                        "cert {} has issuer != prev_cert.subject for {:?}",
+                        idx,
+                        info
+                    )
+                }
+                prev_subject_data = subject_data.clone();
+            }
+        }
+    }
 }
