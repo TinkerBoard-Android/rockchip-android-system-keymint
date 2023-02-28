@@ -268,6 +268,21 @@ pub trait InnerSerialize: Sized {
     fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error>;
 }
 
+impl InnerSerialize for u64 {
+    fn deserialize(data: &[u8]) -> Result<(Self, &[u8]), Error> {
+        if data.len() < 8 {
+            return Err(Error::DataTruncated);
+        }
+        let int_data: [u8; 8] = data[..8].try_into().map_err(|_e| Error::DataTruncated)?;
+        Ok((<u64>::from_ne_bytes(int_data), &data[8..]))
+    }
+    fn serialize_into(&self, buf: &mut Vec<u8>) -> Result<(), Error> {
+        buf.try_reserve(8).map_err(|_e| Error::AllocationFailed)?;
+        buf.extend_from_slice(&self.to_ne_bytes());
+        Ok(())
+    }
+}
+
 impl InnerSerialize for u32 {
     fn deserialize(data: &[u8]) -> Result<(Self, &[u8]), Error> {
         if data.len() < 4 {
