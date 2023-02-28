@@ -53,6 +53,9 @@ pub fn shared_secret_context(
     let mut seen = false;
     for param in params {
         result.try_extend_from_slice(&param.seed)?;
+        if param.nonce.len() != 32 {
+            return Err(km_err!(InvalidArgument, "nonce len {} not 32", param.nonce.len()));
+        }
         result.try_extend_from_slice(&param.nonce)?;
         if param == must_include {
             seen = true;
