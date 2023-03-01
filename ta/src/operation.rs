@@ -667,9 +667,7 @@ impl<'a> crate::KeyMintTa<'a> {
             return Err(km_err!(KeyUserNotAuthenticated, "failed to authenticate auth_token"));
         }
         // Common check: token's auth type should match key's USER_AUTH_TYPE.
-        if auth_info.auth_type != 0
-            && (auth_token.authenticator_type as u32 & auth_info.auth_type) == 0
-        {
+        if (auth_token.authenticator_type as u32 & auth_info.auth_type) == 0 {
             return Err(km_err!(
                 KeyUserNotAuthenticated,
                 "token auth type {:?} doesn't overlap with key auth type {:?}",
@@ -840,8 +838,9 @@ impl<'a> crate::KeyMintTa<'a> {
         timestamp_token: Option<TimeStampToken>,
     ) -> Result<bool, Error> {
         if let Some(auth_info) = &op.auth_info {
-            let auth_token = auth_token
-                .ok_or_else(|| km_err!(KeyUserNotAuthenticated, "no auth token on update_aad()"))?;
+            let auth_token = auth_token.ok_or_else(|| {
+                km_err!(KeyUserNotAuthenticated, "no auth token on subsequent op")
+            })?;
 
             // Most auth checks happen on begin(), but there are two exceptions.
             // a) There is no AUTH_TIMEOUT: there should be a valid auth token on every invocation.
