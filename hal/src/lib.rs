@@ -14,7 +14,7 @@ use kmr_wire::{
     cbor, cbor_type_error, keymint::ErrorCode, keymint::NEXT_MESSAGE_SIGNAL_TRUE, AsCborValue,
     CborError, Code, KeyMintOperation,
 };
-use log::{error, info};
+use log::{error, info, warn};
 use std::{
     ffi::CString,
     io::{Read, Write},
@@ -192,7 +192,7 @@ where
     // invoked (IRemotelyProvisionedComponent vs. the rest). However, the OK value is
     // the same in all spaces.
     if error_code != ErrorCode::Ok as i32 {
-        error!("HAL: command {:?} failed: {:?}", <R>::CODE, error_code);
+        warn!("HAL: command {:?} failed: {:?}", <R>::CODE, error_code);
         return Err(binder::Status::new_service_specific_error(error_code, None));
     }
 
