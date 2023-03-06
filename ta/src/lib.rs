@@ -1168,7 +1168,7 @@ fn error_rsp(error_code: i32) -> PerformOpResponse {
 
 /// Create a response structure with the given error.
 fn op_error_rsp(op: KeyMintOperation, err: Error) -> PerformOpResponse {
-    error!("failing {:?} request with error {:?}", op, err);
+    warn!("failing {:?} request with error {:?}", op, err);
     if kmr_wire::is_rpc_operation(op) {
         // The IRemotelyProvisionedComponent HAL uses a different error space than the
         // other HALs.
@@ -1178,19 +1178,13 @@ fn op_error_rsp(op: KeyMintOperation, err: Error) -> PerformOpResponse {
                 error!("encountered non-RKP error on RKP method! {:?}", err);
                 rpc::ErrorCode::Failed
             }
-            Error::Rpc(e, err_msg) => {
-                error!("Returning error code: {:?} in the response due to: {}", e, err_msg);
-                e
-            }
+            Error::Rpc(e, _) => e,
         };
         error_rsp(rpc_err as i32)
     } else {
         let hal_err = match err {
             Error::Cbor(_) | Error::Der(_) => ErrorCode::InvalidArgument,
-            Error::Hal(e, err_msg) => {
-                error!("Returning error code: {:?} in the response due to: {}", e, err_msg);
-                e
-            }
+            Error::Hal(e, _) => e,
             Error::Rpc(_, _) => {
                 error!("encountered RKP error on non-RKP method! {:?}", err);
                 ErrorCode::UnknownError
