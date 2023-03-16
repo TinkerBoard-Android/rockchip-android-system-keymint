@@ -3,7 +3,7 @@
 use super::{CurveType, KeyMaterial, OpaqueOr};
 use crate::{km_err, try_to_vec, Error, FallibleAllocExt};
 use alloc::vec::Vec;
-use der::AnyRef;
+use der::{AnyRef, Decode};
 use kmr_wire::{coset, keymint::EcCurve, rpc, KeySizeInBits};
 use spki::{AlgorithmIdentifier, SubjectPublicKeyInfo};
 use zeroize::ZeroizeOnDrop;
@@ -349,10 +349,32 @@ pub fn curve_to_key_size(curve: EcCurve) -> KeySizeInBits {
     })
 }
 
+/// Import an NIST EC key in SEC1 ECPrivateKey format.
+pub fn import_sec1_private_key(data: &[u8]) -> Result<KeyMaterial, Error> {
+    let ec_key = sec1::EcPrivateKey::from_der(data)?;
+    let ec_parameters = ec_key.parameters.ok_or(km_err!(
+        InvalidArgument,
+        "sec1 formatted EC private key didn't have a parameters field"
+    ))?;
+    let parameters_oid = ec_parameters.named_curve().ok_or(km_err!(
+        InvalidArgument,
+        "couldn't retrieve parameters oid from sec1 ECPrivateKey formatted ec key parameters"
+    ))?;
+    let algorithm =
+        AlgorithmIdentifier { oid: X509_NIST_OID, parameters: Some(AnyRef::from(&parameters_oid)) };
+    let pkcs8_key = pkcs8::PrivateKeyInfo::new(algorithm, data);
+    import_pkcs8_key_impl(&pkcs8_key)
+}
+
 /// Import an EC key in PKCS#8 format.
 pub fn import_pkcs8_key(data: &[u8]) -> Result<KeyMaterial, Error> {
     let key_info = pkcs8::PrivateKeyInfo::try_from(data)
         .map_err(|_| km_err!(InvalidArgument, "failed to parse PKCS#8 EC key"))?;
+    import_pkcs8_key_impl(&key_info)
+}
+
+/// Import a `pkcs8::PrivateKeyInfo` EC key.
+fn import_pkcs8_key_impl(key_info: &pkcs8::PrivateKeyInfo) -> Result<KeyMaterial, Error> {
     let algo_params = key_info.algorithm.parameters;
     match key_info.algorithm.oid {
         X509_NIST_OID => {
