@@ -189,10 +189,17 @@ pub fn import_pkcs8_key(data: &[u8]) -> Result<(KeyMaterial, KeySizeInBits, RsaE
         ));
     }
     // For RSA, the inner private key is an ASN.1 `RSAPrivateKey`, as per PKCS#1 (RFC 3447 A.1.2).
-    let key = Key(try_to_vec(key_info.private_key)?);
+    import_pkcs1_key(key_info.private_key)
+}
+
+/// Import an RSA key in PKCS#1 format, also returning the key size in bits and public exponent.
+pub fn import_pkcs1_key(
+    private_key: &[u8],
+) -> Result<(KeyMaterial, KeySizeInBits, RsaExponent), Error> {
+    let key = Key(try_to_vec(private_key)?);
 
     // Need to parse it to find size/exponent.
-    let parsed_key = pkcs1::RsaPrivateKey::try_from(key_info.private_key)
+    let parsed_key = pkcs1::RsaPrivateKey::try_from(private_key)
         .map_err(|_| km_err!(InvalidArgument, "failed to parse inner PKCS#1 key"))?;
     let key_size = parsed_key.modulus.as_bytes().len() as u32 * 8;
 
