@@ -41,6 +41,8 @@ const RPC_P256_KEYGEN_PARAMS: [KeyParam; 8] = [
     KeyParam::CertificateNotAfter(DateTime { ms_since_epoch: 253402300799000 }),
 ];
 
+const MAX_CHALLENGE_SIZE_V2: usize = 64;
+
 impl<'a> KeyMintTa<'a> {
     pub fn rpc_device_info(&self) -> Result<Vec<u8>, Error> {
         let info = self.rpc_device_info_cbor()?;
@@ -189,6 +191,14 @@ impl<'a> KeyMintTa<'a> {
             return Err(km_err!(
                 Unimplemented,
                 "generate_cert_req_v2 is not implemented for IRPC HAL V2 and below."
+            ));
+        }
+        if challenge.len() > MAX_CHALLENGE_SIZE_V2 {
+            return Err(km_err!(
+                InvalidArgument,
+                "Challenge is too big. Actual: {:?}. Maximum: {:?}.",
+                challenge.len(),
+                MAX_CHALLENGE_SIZE_V2
             ));
         }
         // Validate mac and extract the public keys to sign from the MacedPublicKeys
