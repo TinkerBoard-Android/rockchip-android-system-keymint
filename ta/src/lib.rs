@@ -27,7 +27,7 @@ use kmr_wire::{
     sharedsecret::SharedSecretParameters,
     *,
 };
-use log::{debug, error, info, warn};
+use log::{error, info, trace, warn};
 
 mod cert;
 mod clock;
@@ -166,7 +166,7 @@ pub fn split_rsp(mut rsp_data: &[u8], max_size: usize) -> Result<Vec<Vec<u8>>, E
         let mut rsp = vec_try_with_capacity!(allowed_msg_length + 1)?;
         rsp.push(NEXT_MESSAGE_SIGNAL_TRUE);
         rsp.extend_from_slice(&rsp_data[..allowed_msg_length]);
-        debug!("Current response size with signalling byte: {}", rsp.len());
+        trace!("Current response size with signalling byte: {}", rsp.len());
         split_rsp.push(rsp);
         rsp_data = &rsp_data[allowed_msg_length..];
     }
@@ -594,10 +594,10 @@ impl<'a> KeyMintTa<'a> {
 
     /// Process a single serialized request, returning a serialized response.
     pub fn process(&mut self, req_data: &[u8]) -> Vec<u8> {
-        let rsp = match PerformOpReq::from_slice(req_data) {
+        let (req_code, rsp) = match PerformOpReq::from_slice(req_data) {
             Ok(req) => {
-                debug!("-> TA: received request {:?}", req);
-                self.process_req(req)
+                trace!("-> TA: received request {:?}", req.code());
+                (Some(req.code()), self.process_req(req))
             }
             Err(e) => {
                 error!("failed to decode CBOR request: {:?}", e);
@@ -605,10 +605,10 @@ impl<'a> KeyMintTa<'a> {
                 // for the `IRemotelyProvisionedComponent` or for one of the other HALs, so we don't
                 // know what numbering space the error codes are expected to be in.  Assume the
                 // shared KeyMint `ErrorCode` space.
-                error_rsp(ErrorCode::UnknownError as i32)
+                (None, error_rsp(ErrorCode::UnknownError as i32))
             }
         };
-        debug!("<- TA: send response {:?}", rsp);
+        trace!("<- TA: send response {:?} rc {}", req_code, rsp.error_code);
         match rsp.into_vec() {
             Ok(rsp_data) => rsp_data,
             Err(e) => {
