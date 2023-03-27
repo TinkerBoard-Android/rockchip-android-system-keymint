@@ -88,7 +88,7 @@ pub struct GenerateKeyRequest {
 pub struct GenerateKeyResponse {
     pub ret: KeyCreationResult,
 }
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct ImportKeyRequest {
     pub key_params: Vec<KeyParam>,
     pub key_format: KeyFormat,
@@ -99,7 +99,7 @@ pub struct ImportKeyRequest {
 pub struct ImportKeyResponse {
     pub ret: KeyCreationResult,
 }
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct ImportWrappedKeyRequest {
     pub wrapped_key_data: Vec<u8>,
     pub wrapping_key_blob: Vec<u8>,
@@ -204,27 +204,29 @@ pub struct SendRootOfTrustResponse {}
 // IKeyMintOperation methods.  These ...Request structures include an extra `op_handle` field whose
 // value was returned in the `InternalBeginResult` type and which identifies the operation in
 // progress.
-#[derive(Debug, Clone, AsCborValue)]
+//
+// `Debug` deliberately not derived to reduce the chances of inadvertent leakage of private info.
+#[derive(Clone, AsCborValue)]
 pub struct UpdateAadRequest {
     pub op_handle: i64, // Extra for internal use, from `InternalBeginResult`.
     pub input: Vec<u8>,
     pub auth_token: Option<HardwareAuthToken>,
     pub timestamp_token: Option<TimeStampToken>,
 }
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct UpdateAadResponse {}
-#[derive(Debug, Clone, AsCborValue)]
+#[derive(Clone, AsCborValue)]
 pub struct UpdateRequest {
     pub op_handle: i64, // Extra for internal use, from `InternalBeginResult`.
     pub input: Vec<u8>,
     pub auth_token: Option<HardwareAuthToken>,
     pub timestamp_token: Option<TimeStampToken>,
 }
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct UpdateResponse {
     pub ret: Vec<u8>,
 }
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct FinishRequest {
     pub op_handle: i64, // Extra for internal use, from `InternalBeginResult`.
     pub input: Option<Vec<u8>>,
@@ -233,7 +235,7 @@ pub struct FinishRequest {
     pub timestamp_token: Option<TimeStampToken>,
     pub confirmation_token: Option<Vec<u8>>,
 }
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct FinishResponse {
     pub ret: Vec<u8>,
 }
@@ -360,7 +362,7 @@ pub struct SetAttestationIdsResponse {}
 
 // Result of an operation, as an error code and a response message (only present when
 // `error_code` is zero).
-#[derive(Debug, AsCborValue)]
+#[derive(AsCborValue)]
 pub struct PerformOpResponse {
     pub error_code: i32,
     pub rsp: Option<PerformOpRsp>,
@@ -466,13 +468,18 @@ macro_rules! declare_req_rsp_enums {
             }
         }
 
-
-        #[derive(Debug)]
         pub enum $reqenum {
             $( $cname($reqtyp), )*
         }
 
-        #[derive(Debug)]
+        impl $reqenum {
+            pub fn code(&self) -> $cenum {
+                match self {
+                    $( Self::$cname(_) => $cenum::$cname, )*
+                }
+            }
+        }
+
         pub enum $rspenum {
             $( $cname($rsptyp), )*
         }
