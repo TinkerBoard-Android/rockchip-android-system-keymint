@@ -219,6 +219,7 @@ pub trait RetrieveRpcArtifacts {
     ) -> Result<Vec<u8>, Error> {
         let cose_sign_algorithm = match signing_algorithm {
             CsrSigningAlgorithm::ES256 => iana::Algorithm::ES256,
+            CsrSigningAlgorithm::ES384 => iana::Algorithm::ES384,
             CsrSigningAlgorithm::EdDSA => iana::Algorithm::EdDSA,
         };
         // Construct `SignedData`
@@ -249,6 +250,7 @@ pub struct DiceInfo {
 #[derive(Clone, Copy, Debug)]
 pub enum CsrSigningAlgorithm {
     ES256,
+    ES384,
     EdDSA,
 }
 
