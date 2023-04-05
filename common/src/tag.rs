@@ -916,6 +916,14 @@ fn reject_incompatible_auth(params: &[KeyParam]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Indication of which parameters on a `begin` need to be checked against key authorizations.
+struct BeginParamsToCheck {
+    block_mode: bool,
+    padding: bool,
+    digest: bool,
+    mgf_digest: bool,
+}
+
 /// Check that an operation with the given `purpose` and `params` can validly be started
 /// using a key with characteristics `chars`.
 pub fn check_begin_params(
@@ -965,25 +973,8 @@ pub fn check_begin_params(
         return Err(km_err!(CallerNonceProhibited, "caller nonce not allowed for encryption"));
     }
 
-    // For various parameters, if they are specified in the begin parameters, the same
-    // value must also exist in the key characteristics. Also, there can be only one
-    // distinct value in the parameters.
-    let bmode_to_find = get_opt_tag_value!(params, BlockMode, UnsupportedBlockMode)?;
-    let pmode_to_find = get_opt_tag_value!(params, Padding, UnsupportedPaddingMode)?;
-    let digest_to_find = get_opt_tag_value!(params, Digest, UnsupportedDigest)?;
-    let mut mgf_digest_to_find =
-        get_opt_tag_value!(params, RsaOaepMgfDigest, UnsupportedMgfDigest)?;
-
-    let chars_have_mgf_digest =
-        chars.iter().any(|param| matches!(param, KeyParam::RsaOaepMgfDigest(_)));
-    if chars_have_mgf_digest && mgf_digest_to_find.is_none() {
-        // The key characteristics include an explicit set of MGF digests, but the begin() operation
-        // is using the default SHA1.  Check that this default is in the characteristics.
-        mgf_digest_to_find = Some(&Digest::Sha1);
-    }
-
     // Further algorithm-specific checks.
-    match algo {
+    let check = match algo {
         Algorithm::Rsa => check_begin_rsa_params(chars, purpose, params),
         Algorithm::Ec => check_begin_ec_params(chars, purpose, params),
         Algorithm::Aes => check_begin_aes_params(chars, params, nonce.map(|v| v.as_ref())),
@@ -991,46 +982,67 @@ pub fn check_begin_params(
         Algorithm::Hmac => check_begin_hmac_params(chars, purpose, params),
     }?;
 
-    // Check params are in characteristics
-    if let Some(bmode) = bmode_to_find {
-        if !contains_tag_value!(chars, BlockMode, *bmode) {
-            return Err(km_err!(
-                IncompatibleBlockMode,
-                "block mode {:?} not in key characteristics {:?}",
-                bmode,
-                chars,
-            ));
+    // For various parameters, if they are specified in the begin parameters and they
+    // are relevant for the algorithm, then the same value must also exist in the key
+    // characteristics. Also, there can be only one distinct value in the parameters.
+    if check.block_mode {
+        if let Some(bmode) = get_opt_tag_value!(params, BlockMode, UnsupportedBlockMode)? {
+            if !contains_tag_value!(chars, BlockMode, *bmode) {
+                return Err(km_err!(
+                    IncompatibleBlockMode,
+                    "block mode {:?} not in key characteristics {:?}",
+                    bmode,
+                    chars,
+                ));
+            }
         }
     }
-    if let Some(pmode) = pmode_to_find {
-        if !contains_tag_value!(chars, Padding, *pmode) {
-            return Err(km_err!(
-                IncompatiblePaddingMode,
-                "padding mode {:?} not in key characteristics {:?}",
-                pmode,
-                chars,
-            ));
+    if check.padding {
+        if let Some(pmode) = get_opt_tag_value!(params, Padding, UnsupportedPaddingMode)? {
+            if !contains_tag_value!(chars, Padding, *pmode) {
+                return Err(km_err!(
+                    IncompatiblePaddingMode,
+                    "padding mode {:?} not in key characteristics {:?}",
+                    pmode,
+                    chars,
+                ));
+            }
         }
     }
-    if let Some(digest) = digest_to_find {
-        if !contains_tag_value!(chars, Digest, *digest) {
-            return Err(km_err!(
-                IncompatibleDigest,
-                "digest {:?} not in key characteristics",
-                digest,
-            ));
+    if check.digest {
+        if let Some(digest) = get_opt_tag_value!(params, Digest, UnsupportedDigest)? {
+            if !contains_tag_value!(chars, Digest, *digest) {
+                return Err(km_err!(
+                    IncompatibleDigest,
+                    "digest {:?} not in key characteristics",
+                    digest,
+                ));
+            }
         }
     }
-    if let Some(mgf_digest) = mgf_digest_to_find {
-        if !contains_tag_value!(chars, RsaOaepMgfDigest, *mgf_digest) {
-            return Err(km_err!(
-                IncompatibleMgfDigest,
-                "MGF digest {:?} not in key characteristics",
-                mgf_digest,
-            ));
-        }
-    }
+    if check.mgf_digest {
+        let mut mgf_digest_to_find =
+            get_opt_tag_value!(params, RsaOaepMgfDigest, UnsupportedMgfDigest)?;
 
+        let chars_have_mgf_digest =
+            chars.iter().any(|param| matches!(param, KeyParam::RsaOaepMgfDigest(_)));
+        if chars_have_mgf_digest && mgf_digest_to_find.is_none() {
+            // The key characteristics include an explicit set of MGF digests, but the begin()
+            // operation is using the default SHA1.  Check that this default is in the
+            // characteristics.
+            mgf_digest_to_find = Some(&Digest::Sha1);
+        }
+
+        if let Some(mgf_digest) = mgf_digest_to_find {
+            if !contains_tag_value!(chars, RsaOaepMgfDigest, *mgf_digest) {
+                return Err(km_err!(
+                    IncompatibleMgfDigest,
+                    "MGF digest {:?} not in key characteristics",
+                    mgf_digest,
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1052,7 +1064,7 @@ fn check_begin_rsa_params(
     chars: &[KeyParam],
     purpose: KeyPurpose,
     params: &[KeyParam],
-) -> Result<(), Error> {
+) -> Result<BeginParamsToCheck, Error> {
     let padding = get_padding_mode(params)?;
     let mut digest = None;
     if for_signing(purpose) || (for_encryption(purpose) && padding == PaddingMode::RsaOaep) {
@@ -1118,7 +1130,7 @@ fn check_begin_rsa_params(
         }
     }
 
-    Ok(())
+    Ok(BeginParamsToCheck { block_mode: false, padding: true, digest: true, mgf_digest: true })
 }
 
 /// Check that an EC operation with the given `purpose` and `params` can validly be started
@@ -1127,7 +1139,7 @@ fn check_begin_ec_params(
     chars: &[KeyParam],
     purpose: KeyPurpose,
     params: &[KeyParam],
-) -> Result<(), Error> {
+) -> Result<BeginParamsToCheck, Error> {
     let curve = get_ec_curve(chars)?;
     if purpose == KeyPurpose::Sign {
         let digest = get_digest(params)?;
@@ -1142,7 +1154,7 @@ fn check_begin_ec_params(
             ));
         }
     }
-    Ok(())
+    Ok(BeginParamsToCheck { block_mode: false, padding: false, digest: true, mgf_digest: false })
 }
 
 /// Check that an AES operation with the given `purpose` and `params` can validly be started
@@ -1151,7 +1163,7 @@ fn check_begin_aes_params(
     chars: &[KeyParam],
     params: &[KeyParam],
     caller_nonce: Option<&[u8]>,
-) -> Result<(), Error> {
+) -> Result<BeginParamsToCheck, Error> {
     reject_tags(params, &[Tag::RsaOaepMgfDigest])?;
     reject_some_digest(params)?;
     let bmode = get_block_mode(params)?;
@@ -1210,12 +1222,15 @@ fn check_begin_aes_params(
             }
         }
     }
-    Ok(())
+    Ok(BeginParamsToCheck { block_mode: true, padding: true, digest: false, mgf_digest: false })
 }
 
 /// Check that a 3-DES operation with the given `purpose` and `params` can validly be started
 /// using a key with characteristics `chars`.
-fn check_begin_3des_params(params: &[KeyParam], caller_nonce: Option<&[u8]>) -> Result<(), Error> {
+fn check_begin_3des_params(
+    params: &[KeyParam],
+    caller_nonce: Option<&[u8]>,
+) -> Result<BeginParamsToCheck, Error> {
     reject_tags(params, &[Tag::RsaOaepMgfDigest])?;
     reject_some_digest(params)?;
     let bmode = get_block_mode(params)?;
@@ -1241,7 +1256,7 @@ fn check_begin_3des_params(params: &[KeyParam], caller_nonce: Option<&[u8]>) -> 
             }
         }
     }
-    Ok(())
+    Ok(BeginParamsToCheck { block_mode: true, padding: true, digest: false, mgf_digest: false })
 }
 
 /// Check that an HMAC operation with the given `purpose` and `params` can validly be started
@@ -1250,7 +1265,7 @@ fn check_begin_hmac_params(
     chars: &[KeyParam],
     purpose: KeyPurpose,
     params: &[KeyParam],
-) -> Result<(), Error> {
+) -> Result<BeginParamsToCheck, Error> {
     reject_tags(params, &[Tag::BlockMode, Tag::RsaOaepMgfDigest])?;
     reject_some_padding(params)?;
     let digest = get_digest(params)?;
@@ -1270,7 +1285,7 @@ fn check_begin_hmac_params(
         }
     }
 
-    Ok(())
+    Ok(BeginParamsToCheck { block_mode: false, padding: false, digest: true, mgf_digest: false })
 }
 
 /// Return the length in bits of a [`Digest`] function.
