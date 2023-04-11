@@ -23,6 +23,9 @@ pub mod sharedsecret;
 pub mod types;
 pub use types::*;
 
+#[cfg(test)]
+mod tests;
+
 /// Macro that emits an implementation of `TryFrom<i32>` for an enum type that has
 /// `[derive(N)]` attached to it.
 #[macro_export]
@@ -187,8 +190,16 @@ impl Into<coset::CoseError> for CborError {
     }
 }
 
-impl From<cbor::de::Error<EndOfFile>> for CborError {
-    fn from(e: cbor::de::Error<EndOfFile>) -> Self {
+impl<T> From<cbor::de::Error<T>> for CborError {
+    fn from(e: cbor::de::Error<T>) -> Self {
+        // Make sure we use our [`EndOfFile`] marker.
+        use cbor::de::Error::{Io, RecursionLimitExceeded, Semantic, Syntax};
+        let e = match e {
+            Io(_) => Io(EndOfFile),
+            Syntax(x) => Syntax(x),
+            Semantic(a, b) => Semantic(a, b),
+            RecursionLimitExceeded => RecursionLimitExceeded,
+        };
         CborError::DecodeFailed(e)
     }
 }
@@ -266,40 +277,11 @@ pub fn cbor_type_error<T>(value: &cbor::value::Value, want: &'static str) -> Res
     Err(CborError::UnexpectedItem(got, want))
 }
 
-/// Newtype wrapper around a byte slice to allow left-over data to be detected.
-struct MeasuringReader<'a>(&'a [u8]);
-
-impl<'a> MeasuringReader<'a> {
-    fn new(buf: &'a [u8]) -> MeasuringReader<'a> {
-        MeasuringReader(buf)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl<'a> ciborium_io::Read for &mut MeasuringReader<'a> {
-    type Error = EndOfFile;
-
-    fn read_exact(&mut self, data: &mut [u8]) -> Result<(), Self::Error> {
-        if data.len() > self.0.len() {
-            return Err(EndOfFile);
-        }
-
-        let (prefix, suffix) = self.0.split_at(data.len());
-        data.copy_from_slice(prefix);
-        self.0 = suffix;
-        Ok(())
-    }
-}
-
 /// Read a [`cbor::value::Value`] from a byte slice, failing if any extra data remains after the
 /// `Value` has been read.
-pub fn read_to_value(slice: &[u8]) -> Result<cbor::value::Value, CborError> {
-    let mut mr = MeasuringReader::new(slice);
-    let value = cbor::de::from_reader(&mut mr)?;
-    if mr.is_empty() {
+pub fn read_to_value(mut slice: &[u8]) -> Result<cbor::value::Value, CborError> {
+    let value = cbor::de::from_reader(&mut slice)?;
+    if slice.is_empty() {
         Ok(value)
     } else {
         Err(CborError::ExtraneousData)
