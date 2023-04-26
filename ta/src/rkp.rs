@@ -134,6 +134,13 @@ impl<'a> KeyMintTa<'a> {
         &mut self,
         test_mode: rpc::TestMode,
     ) -> Result<(MacedPublicKey, Vec<u8>), Error> {
+        if self.rpc_info.get_version() > IRPC_V2 && test_mode == rpc::TestMode(true) {
+            return Err(rpc_err!(
+                Removed,
+                "generate_ecdsa_p256_keypair does not support test mode in IRPC V3+ HAL."
+            ));
+        }
+
         let (key_material, chars) = self.generate_key_material(&RPC_P256_KEYGEN_PARAMS)?;
 
         let pub_cose_key = match key_material {
